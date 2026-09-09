@@ -1,0 +1,23 @@
+{
+  "name": "agentradez web",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22-bookworm",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+  "workspaceFolder": "/workspace/web",
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": { "label": "Web", "onAutoForward": "notify" }
+  },
+  "remoteEnv": {
+    "NEXT_PUBLIC_API_URL": "http://localhost:8000",
+    "NEXT_PUBLIC_SITE_URL": "http://localhost:3000",
+    "API_INTERNAL_URL": "http://host.docker.internal:8000"
+  },
+  "runArgs": ["--add-host=host.docker.internal:host-gateway"],
+  "postCreateCommand": "npm install",
+  "postStartCommand": "nohup npm run dev > /tmp/agentradez-web.log 2>&1 &",
+  "customizations": {
+    "vscode": {
+      "extensions": ["dbaeumer.vscode-eslint"]
+    }
+  }
+}

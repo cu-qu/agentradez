@@ -1,0 +1,10 @@
+# Dev Container override: keep the app process alive so Cursor can attach.
+# Start Django + Celery from the "Agentradez: API + Celery" launch config.
+# Celery compose services are profile-gated so they do not collide with the debugger.
+services:
+  app:
+    command: sleep infinity
+  celery:
+    profiles: ["full-stack"]
+  celery-beat:
+    profiles: ["full-stack"]

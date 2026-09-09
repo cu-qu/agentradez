@@ -1,0 +1,47 @@
+{
+  "name": "agentradez",
+  "build": {
+    "context": "..",
+    "dockerfile": "Dockerfile"
+  },
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+  "workspaceFolder": "/workspace",
+  "forwardPorts": [8002, 3000],
+  "portsAttributes": {
+    "8002": { "label": "API", "onAutoForward": "notify" },
+    "3000": { "label": "Web", "onAutoForward": "notify" }
+  },
+  "remoteEnv": {
+    "DJANGO_SETTINGS_MODULE": "config.settings.local",
+    "DJANGO_DB_HOST": "localhost",
+    "DJANGO_DB_PORT": "5432",
+    "DJANGO_DB_NAME": "agentradez",
+    "DJANGO_DB_USER": "postgres",
+    "DJANGO_DB_PASSWORD": "postgres",
+    "REDIS_URL": "redis://127.0.0.1:6379/0",
+    "CELERY_BROKER_URL": "redis://127.0.0.1:6379/0",
+    "CELERY_RESULT_BACKEND": "redis://127.0.0.1:6379/0",
+    "FRONTEND_URL": "http://localhost:3000",
+    "NEXT_PUBLIC_API_URL": "http://localhost:8002",
+    "NEXT_PUBLIC_SITE_URL": "http://localhost:3000",
+    "CSRF_TRUSTED_ORIGINS": "http://localhost:8000,http://localhost:8002,http://localhost:3000",
+    "CHOKIDAR_USEPOLLING": "true",
+    "WATCHPACK_POLLING": "true"
+  },
+  "initializeCommand": "sh -c 'test -f backend/.env || cp backend/.env.example backend/.env; test -f web/.env.local || cp web/.env.example web/.env.local'",
+  "postCreateCommand": "cd /workspace/web && npm install",
+  "postStartCommand": "bash /workspace/.devcontainer/poststart.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.debugpy",
+        "dbaeumer.vscode-eslint"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python"
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+.git
+.venv
+venv
+__pycache__
+*.pyc
+.pytest_cache
+mediafiles
+celerybeat-schedule
+celerybeat-schedule.*
+.DS_Store
+node_modules
+.cursor
+canvases

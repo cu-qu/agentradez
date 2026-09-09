@@ -1,0 +1,12 @@
+.git
+**/.venv
+**/venv
+**/node_modules
+**/.next
+**/.expo
+**/__pycache__
+**/*.py[cod]
+**/staticfiles
+**/mediafiles
+**/.pytest_cache
+agent_artifacts

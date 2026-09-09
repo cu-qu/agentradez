@@ -1,0 +1,60 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Django: migrate",
+      "type": "shell",
+      "command": "python manage.py migrate --noinput",
+      "options": {
+        "env": {
+          "DJANGO_SETTINGS_MODULE": "config.settings.local"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Django: setup_base_data",
+      "type": "shell",
+      "command": "python manage.py setup_base_data",
+      "options": {
+        "env": {
+          "DJANGO_SETTINGS_MODULE": "config.settings.local"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Django: runserver",
+      "type": "shell",
+      "command": "python manage.py runserver 0.0.0.0:8000",
+      "options": {
+        "env": {
+          "DJANGO_SETTINGS_MODULE": "config.settings.local"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Celery: worker",
+      "type": "shell",
+      "command": "celery -A config worker -Q main,celery -l info",
+      "options": {
+        "env": {
+          "DJANGO_SETTINGS_MODULE": "config.settings.local"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Celery: beat",
+      "type": "shell",
+      "command": "celery -A config beat -l info",
+      "options": {
+        "env": {
+          "DJANGO_SETTINGS_MODULE": "config.settings.local"
+        }
+      },
+      "problemMatcher": []
+    }
+  ]
+}

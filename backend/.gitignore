@@ -1,0 +1,37 @@
+__pycache__/
+*.py[cod]
+*.sqlite3
+.venv/
+venv/
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Django artifacts
+staticfiles/
+mediafiles/
+
+# Node / frontend
+node_modules/
+dist/
+build/
+
+# Editor / tooling
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+.DS_Store
+Untitled/
+
+# Railway CLI link (keep .railway/railway.ts)
+.railway/config.json
+railway.json
+
+# Celery
+celerybeat-schedule
+celerybeat-schedule.*

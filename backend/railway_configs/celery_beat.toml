@@ -1,0 +1,7 @@
+[build]
+builder = "railpack"
+buildCommand = "echo 'building celery beat'"
+
+[deploy]
+startCommand = "celery -A config beat -l info"
+restartPolicyType = "ON_FAILURE"

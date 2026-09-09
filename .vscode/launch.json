@@ -1,0 +1,138 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Django: API",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/backend/manage.py",
+      "args": ["runserver", "0.0.0.0:8000", "--noreload"],
+      "django": true,
+      "justMyCode": true,
+      "cwd": "${workspaceFolder}/backend",
+      "envFile": "${workspaceFolder}/backend/.env",
+      "env": {
+        "DJANGO_SETTINGS_MODULE": "config.settings.local",
+        "DJANGO_DB_HOST": "localhost",
+        "DJANGO_DB_PORT": "5433",
+        "REDIS_URL": "redis://127.0.0.1:6380/0",
+        "CELERY_BROKER_URL": "redis://127.0.0.1:6380/0",
+        "CELERY_RESULT_BACKEND": "redis://127.0.0.1:6380/0"
+      },
+      "console": "integratedTerminal",
+      "preLaunchTask": "prepare-django-debug"
+    },
+    {
+      "name": "Django: API (port 8002)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/backend/manage.py",
+      "args": ["runserver", "0.0.0.0:8002", "--noreload"],
+      "django": true,
+      "justMyCode": true,
+      "cwd": "${workspaceFolder}/backend",
+      "envFile": "${workspaceFolder}/backend/.env",
+      "env": {
+        "DJANGO_SETTINGS_MODULE": "config.settings.local"
+      },
+      "console": "integratedTerminal",
+      "preLaunchTask": "prepare-django-debug"
+    },
+    {
+      "name": "Django: tests",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/backend/manage.py",
+      "args": ["test"],
+      "django": true,
+      "justMyCode": true,
+      "cwd": "${workspaceFolder}/backend",
+      "env": {
+        "DJANGO_SETTINGS_MODULE": "config.settings.test"
+      },
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Celery: worker",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "celery",
+      "args": [
+        "-A",
+        "config",
+        "worker",
+        "-Q",
+        "main,celery",
+        "-l",
+        "info",
+        "--pool=solo"
+      ],
+      "justMyCode": true,
+      "cwd": "${workspaceFolder}/backend",
+      "envFile": "${workspaceFolder}/backend/.env",
+      "env": {
+        "DJANGO_SETTINGS_MODULE": "config.settings.local",
+        "DJANGO_DB_HOST": "localhost",
+        "DJANGO_DB_PORT": "5433",
+        "REDIS_URL": "redis://127.0.0.1:6380/0",
+        "CELERY_BROKER_URL": "redis://127.0.0.1:6380/0",
+        "CELERY_RESULT_BACKEND": "redis://127.0.0.1:6380/0"
+      },
+      "console": "integratedTerminal",
+      "preLaunchTask": "prepare-celery-debug"
+    },
+    {
+      "name": "Stripe: listen",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "stripe listen --project-name agentradez --forward-to localhost:8000/api/billing/webhooks/stripe/",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "stop-stripe-listen"
+    },
+    {
+      "name": "Next.js: debug server-side",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run dev -- --inspect",
+      "cwd": "${workspaceFolder}/web",
+      "preLaunchTask": "stop-next-dev"
+    },
+    {
+      "name": "Next.js: debug client-side",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:3000",
+      "webRoot": "${workspaceFolder}/web"
+    },
+    {
+      "name": "Next.js: debug full stack",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/web/node_modules/next/dist/bin/next",
+      "runtimeArgs": ["--inspect"],
+      "args": ["dev", "--hostname", "0.0.0.0", "--port", "3000"],
+      "cwd": "${workspaceFolder}/web",
+      "skipFiles": ["<node_internals>/**"],
+      "preLaunchTask": "stop-next-dev",
+      "serverReadyAction": {
+        "action": "debugWithChrome",
+        "killOnServerStop": true,
+        "pattern": "- Local:.+(https?://.+)",
+        "uriFormat": "%s",
+        "webRoot": "${workspaceFolder}/web"
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "All services",
+      "configurations": [
+        "Django: API",
+        "Next.js: debug server-side",
+        "Celery: worker",
+        "Stripe: listen"
+      ],
+      "stopAll": true
+    }
+  ]
+}

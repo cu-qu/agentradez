@@ -1,0 +1,7 @@
+[build]
+builder = "railpack"
+buildCommand = "echo 'building celery worker'"
+
+[deploy]
+startCommand = "celery -A config worker -Q main -l info --autoscale 4,2"
+restartPolicyType = "ON_FAILURE"

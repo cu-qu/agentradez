@@ -1,0 +1,72 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "ensure-local-services",
+      "type": "shell",
+      "command": "bash ${workspaceFolder}/backend/scripts/ensure_local_services.sh",
+      "presentation": {
+        "reveal": "silent",
+        "close": true,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "prepare-django-debug",
+      "dependsOn": ["ensure-local-services", "stop-django-runserver"],
+      "dependsOrder": "sequence",
+      "problemMatcher": []
+    },
+    {
+      "label": "stop-django-runserver",
+      "type": "shell",
+      "command": "pkill -f 'manage.py runserver' || true",
+      "presentation": {
+        "reveal": "silent",
+        "close": true,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "stop-celery-worker",
+      "type": "shell",
+      "command": "pkill -f 'celery -A config worker' || true",
+      "presentation": {
+        "reveal": "silent",
+        "close": true,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "prepare-celery-debug",
+      "dependsOn": ["ensure-local-services", "stop-celery-worker"],
+      "dependsOrder": "sequence",
+      "problemMatcher": []
+    },
+    {
+      "label": "stop-next-dev",
+      "type": "shell",
+      "command": "pkill -f 'node_modules/.+/[n]ext/dist/bin/[n]ext' || true; pkill -f '[n]ext-server' || true; rm -f .next/dev/lock web/.next/dev/lock",
+      "presentation": {
+        "reveal": "silent",
+        "close": true,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "stop-stripe-listen",
+      "type": "shell",
+      "command": "pkill -f 'stripe listen --project-name agentradez' || true",
+      "presentation": {
+        "reveal": "silent",
+        "close": true,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

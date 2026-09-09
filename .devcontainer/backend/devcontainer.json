@@ -1,0 +1,28 @@
+{
+  "name": "agentradez backend",
+  "dockerComposeFile": [
+    "../../backend/docker-compose.yml",
+    "../../backend/docker-compose.devcontainer.yml"
+  ],
+  "service": "app",
+  "workspaceFolder": "/app",
+  "shutdownAction": "stopCompose",
+  "forwardPorts": [8000],
+  "portsAttributes": {
+    "8000": { "label": "API", "onAutoForward": "notify" }
+  },
+  "initializeCommand": "test -f backend/.env || cp backend/.env.example backend/.env",
+  "postStartCommand": "bash ./scripts/devcontainer_poststart.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.debugpy"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python"
+      }
+    }
+  }
+}

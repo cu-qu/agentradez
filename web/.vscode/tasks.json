@@ -1,0 +1,18 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Next.js: dev",
+      "type": "shell",
+      "command": "npm run dev",
+      "problemMatcher": [],
+      "isBackground": true
+    },
+    {
+      "label": "Generate OpenAPI client",
+      "type": "shell",
+      "command": "npm run generate:api",
+      "problemMatcher": []
+    }
+  ]
+}

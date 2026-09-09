@@ -1,0 +1,50 @@
+---
+description: Always update OpenAPI schema (drf-spectacular) when API changes are made or added
+alwaysApply: true
+---
+
+# Keep OpenAPI schema in sync with the API
+
+When you add or change API endpoints (views, URLs, request/response shapes), **always update the OpenAPI schema** so `/api/docs/` stays accurate.
+
+## Do this when:
+
+- Adding a new endpoint (new view + URL)
+- Changing what an endpoint returns (serializers, response fields)
+- Adding or changing query parameters, path parameters, or request body
+- Renaming or removing endpoints
+
+## How to update the schema
+
+1. **Views** — Use `@extend_schema` from `drf_spectacular.utils` on the view class:
+   - `tags=["Auth"]` (or Profile, Reference) so the endpoint is grouped in the docs
+   - `summary="Short action name"`
+   - `description="..."` for non-obvious behavior
+   - `parameters=[OpenApiParameter(...)]` for query/path params
+
+2. **Settings** — If you add a new tag or change the API overview, update `SPECTACULAR_SETTINGS` in `config/settings/base.py`:
+   - **TAGS** — Add a new tag dict if you introduced a new group.
+   - **DESCRIPTION** — Update the main API description so the bullet list includes any new endpoints.
+
+## Example
+
+```python
+from drf_spectacular.utils import extend_schema, OpenApiParameter
+
+@extend_schema(
+    tags=["Auth"],
+    summary="Register",
+    description="Creates the account and returns JWT tokens.",
+)
+class RegisterView(generics.CreateAPIView):
+    ...
+```
+
+## Checklist
+
+After adding or changing an endpoint:
+
+- [ ] View has `@extend_schema` with at least `tags` and `summary`
+- [ ] New query/path params are documented with `OpenApiParameter` (or in the serializer)
+- [ ] New tags are added to `SPECTACULAR_SETTINGS["TAGS"]` in `config/settings/base.py` if needed
+- [ ] `SPECTACULAR_SETTINGS["DESCRIPTION"]` in `config/settings/base.py` is updated so the intro at `/api/docs/` lists the new endpoint(s)

@@ -1,0 +1,5 @@
+# Dev Container override: keep the web process alive so Cursor can attach.
+# Start Next.js from the "Next.js: dev" launch config.
+services:
+  web:
+    command: sleep infinity
