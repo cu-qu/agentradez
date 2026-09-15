@@ -4,7 +4,7 @@
 #
 # Prerequisites:
 #   1. This repo is on GitHub (default: cu-qu/agentradez)
-#   2. Railway CLI is installed and logged in (`railway login`)
+#   2. Railway CLI 5.42.1+ is installed and logged in (`railway login`)
 #   3. The Railway GitHub app can read that repo
 #
 # Usage:
@@ -32,8 +32,13 @@ run() {
 
 echo "Railway bootstrap for ${PROJECT_DISPLAY_NAME}"
 echo "  Layout: Postgres, Redis, gunicorn api, celery worker, celery beat"
-echo "  IaC:    .railway/railway.ts"
+echo "  IaC:    .railway/railway.ts (Railpack; no Config as Code files)"
 echo
+
+if [ "$DRY_RUN" -eq 0 ] && [ ! -d .railway/node_modules/railway ]; then
+  echo "Installing railway IaC SDK..."
+  npm install --prefix .railway
+fi
 
 if [ "$DRY_RUN" -eq 0 ] && ! command -v railway >/dev/null 2>&1; then
   cat <<EOF
@@ -48,8 +53,10 @@ EOF
 fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
+  echo "Would run: npm install --prefix .railway (if .railway/node_modules/railway is missing)"
   echo "Would run: railway login (if needed)"
   echo "Would run: railway init --name ${PROJECT_DISPLAY_NAME}  (if unlinked)"
+  echo "Would run: railway config plan"
   echo "Would run: railway config apply"
   echo "Would run: railway domain --service ${API_SERVICE}"
   exit 0
