@@ -230,6 +230,16 @@ export function useMarkNotificationRead() {
   });
 }
 
+export function useMarkAllNotificationsRead() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ updated: number }>("/api/notifications/read-all/"),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
 export function useSaveAssignment() {
   const queryClient = useQueryClient();
   return useMutation({

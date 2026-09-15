@@ -44,6 +44,7 @@ class OpenApiAndCeleryTests(TestCase):
             "/api/trades/",
             "/api/performance/",
             "/api/notifications/",
+            "/api/notifications/read-all/",
             "/api/billing/plans/",
             "/api/billing/subscription/",
             "/api/billing/checkout/",

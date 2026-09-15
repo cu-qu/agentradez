@@ -53,6 +53,7 @@ from trading.views_user import (
     DecisionListView,
     InvestmentTierListView,
     NotificationListView,
+    NotificationReadAllView,
     NotificationReadView,
     PerformanceView,
     PositionListView,
@@ -122,6 +123,11 @@ urlpatterns = [
     path("decisions/<int:pk>/", DecisionDetailView.as_view(), name="decision-detail"),
     path("performance/", PerformanceView.as_view(), name="performance"),
     path("notifications/", NotificationListView.as_view(), name="notification-list"),
+    path(
+        "notifications/read-all/",
+        NotificationReadAllView.as_view(),
+        name="notification-read-all",
+    ),
     path(
         "notifications/<int:pk>/read/",
         NotificationReadView.as_view(),

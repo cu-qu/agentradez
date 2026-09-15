@@ -114,6 +114,7 @@ python manage.py grant_subscription friend@example.com --revoke
 | GET | `/api/performance/` |
 | GET | `/api/notifications/` |
 | POST | `/api/notifications/{id}/read/` |
+| POST | `/api/notifications/read-all/` |
 
 ## Trading API (admin)
 

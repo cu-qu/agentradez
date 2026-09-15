@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import {
+  useMarkAllNotificationsRead,
   useMarkNotificationRead,
   useNotificationsQuery,
 } from "@/lib/api/hooks";
@@ -17,6 +18,7 @@ export function NotificationBell() {
   const unread = useNotificationsQuery(true, true);
   const all = useNotificationsQuery(open, undefined);
   const markRead = useMarkNotificationRead();
+  const markAllRead = useMarkAllNotificationsRead();
   const items = (open ? all.data?.results : unread.data?.results) ?? [];
   const unreadCount = unread.data?.count ?? 0;
 
@@ -49,13 +51,25 @@ export function NotificationBell() {
             <span className="text-xs font-medium uppercase tracking-wide text-muted">
               Activity
             </span>
-            <Link
-              href="/activity"
-              onClick={() => setOpen(false)}
-              className="text-xs text-muted hover:text-foreground"
-            >
-              View all
-            </Link>
+            <div className="flex items-center gap-3">
+              {unreadCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => markAllRead.mutate()}
+                  disabled={markAllRead.isPending}
+                  className="text-xs text-muted hover:text-foreground disabled:opacity-50"
+                >
+                  Clear all
+                </button>
+              ) : null}
+              <Link
+                href="/activity"
+                onClick={() => setOpen(false)}
+                className="text-xs text-muted hover:text-foreground"
+              >
+                View all
+              </Link>
+            </div>
           </div>
           <div className="max-h-96 overflow-y-auto">
             {items.length === 0 ? (

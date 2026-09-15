@@ -874,6 +874,56 @@ class DecisionTrailTests(TradingMixin, TestCase):
         self.assertEqual(other.get("/api/decisions/").json()["count"], 0)
 
 
+class NotificationApiTests(TradingMixin, TestCase):
+    def setUp(self):
+        self.seed()
+        self.user = self.make_user()
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+
+    def test_read_all_marks_only_this_users_unread(self):
+        unread = [
+            Notification.objects.create(
+                user=self.user,
+                kind=Notification.Kind.SKIP,
+                title=f"Unread {i}",
+            )
+            for i in range(3)
+        ]
+        already_read = Notification.objects.create(
+            user=self.user,
+            kind=Notification.Kind.ENTRY,
+            title="Already read",
+            is_read=True,
+        )
+        other = self.make_user("other")
+        other_unread = Notification.objects.create(
+            user=other,
+            kind=Notification.Kind.SKIP,
+            title="Other unread",
+        )
+
+        resp = self.client.post("/api/notifications/read-all/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), {"updated": 3})
+
+        for note in unread:
+            note.refresh_from_db()
+            self.assertTrue(note.is_read)
+        already_read.refresh_from_db()
+        self.assertTrue(already_read.is_read)
+        other_unread.refresh_from_db()
+        self.assertFalse(other_unread.is_read)
+
+        again = self.client.post("/api/notifications/read-all/")
+        self.assertEqual(again.status_code, 200)
+        self.assertEqual(again.json(), {"updated": 0})
+
+    def test_read_all_requires_auth(self):
+        anon = APIClient()
+        self.assertEqual(anon.post("/api/notifications/read-all/").status_code, 401)
+
+
 class AdminApiTests(TradingMixin, TestCase):
     def setUp(self):
         self.seed()

@@ -849,3 +849,25 @@ class NotificationReadView(APIView):
         notification.is_read = True
         notification.save(update_fields=["is_read"])
         return Response(NotificationSerializer(notification).data)
+
+
+class NotificationReadAllView(APIView):
+    permission_classes = TRADING_ACCESS
+
+    @extend_schema(
+        tags=["Notifications"],
+        summary="Mark all notifications as read",
+        description="Clears unread notices for this user so the badge resets.",
+        request=None,
+        responses={
+            200: inline_serializer(
+                name="NotificationReadAll",
+                fields={"updated": serializers.IntegerField()},
+            )
+        },
+    )
+    def post(self, request):
+        updated = Notification.objects.filter(
+            user=request.user, is_read=False
+        ).update(is_read=True)
+        return Response({"updated": updated})

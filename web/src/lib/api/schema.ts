@@ -1275,6 +1275,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/notifications/read-all/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark all notifications as read
+         * @description Clears unread notices for this user so the badge resets.
+         */
+        post: operations["notifications_read_all_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/notifications/{id}/read/": {
         parameters: {
             query?: never;
@@ -1922,6 +1942,9 @@ export interface components {
             body?: string;
             broker_account_id?: string;
             is_read?: boolean;
+        };
+        NotificationReadAll: {
+            updated: number;
         };
         /**
          * @description * `call` - Call
@@ -5276,6 +5299,25 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaginatedNotificationList"];
+                };
+            };
+        };
+    };
+    notifications_read_all_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationReadAll"];
                 };
             };
         };

@@ -3,7 +3,7 @@
     "info": {
         "title": "Agentradez API",
         "version": "1.0.0",
-        "description": "\nREST API for **Agentradez**.\n\nUsers connect a brokerage account, pick one Strategy and one Investment Tier for a single brokerage account, then the platform runs automatically.\n\n- **Auth** — Register (sends a verification email via **django-anymail** / **Resend** when `RESEND_API_KEY` is set; otherwise the console backend), login (JWT), refresh token, current user (`GET/PATCH /api/auth/me/`), `GET /api/auth/verify-email/?token=`, `POST /api/auth/verify-email/resend/`, `POST /api/auth/password-reset/`, `POST /api/auth/password-reset/confirm/`\n- **Profile** — `GET/PATCH /api/auth/profile/` (preferred language)\n- **Broker** — Connect Alpaca with API keys (`POST /api/broker-connections/`) or Robinhood via OAuth (`POST /api/broker-connections/robinhood/oauth/start/`, paste the localhost callback URL to `POST /api/broker-connections/robinhood/oauth/complete/`, optional GET callback `GET /api/broker-connections/robinhood/oauth/callback/`). List/select Agentic accounts (`GET /api/broker-connections/{id}/accounts/`, `GET /api/broker-connections/{id}/accounts/{account_number}/`, `POST /api/broker-connections/{id}/select-account/`). List Robinhood agent MCP tools (`GET /api/broker-connections/{id}/agent-tools/`). Disconnect (`POST /api/broker-connections/{id}/disconnect/`).\n- **Strategies** — List strategies this account can pick (`GET /api/strategies/`; public plus any restricted grants). Parsed signals for a strategy (`GET /api/strategies/{id}/signals/`)\n- **Tiers** — List investment tiers (`GET /api/investment-tiers/`)\n- **Assignment** — Select Strategy + Investment Tier for one brokerage account (`GET/PUT /api/assignment/`; `broker_account_id` binds it to a Robinhood Agentic account)\n- **Positions** — Open positions (`GET /api/positions/`; optional `broker_account_id`)\n- **Trades** — Trade history including cancelled unfilled orders (`GET /api/trades/`, `GET /api/trades/{id}/`; optional `broker_account_id`)\n- **Decisions** — Paper trail of how the assigned strategy processed signals and exits (`GET /api/decisions/`, `GET /api/decisions/{id}/`; optional `action`, `outcome`, `ticker`, `broker_account_id`)\n- **Performance** — Personal metrics including lifetime P&L (`GET /api/performance/`)\n- **Notifications** — Entry / skip / take-profit / exit notices, each linked to a decision when available (`GET /api/notifications/`, `POST /api/notifications/{id}/read/`; optional `broker_account_id`)\n- **Admin** — Staff JWT (`is_staff`): create/configure strategies (including Copy Trade `signal_source` plus nested X watcher with `poll_interval_seconds`, Research / Breakthrough watchlists, and visibility / user-group access), list tweets/signals/research events per strategy, look back N days on an X copy-trade account (`POST /api/admin/strategies/{id}/lookback/`), ingest a research headline (`POST /api/admin/strategies/{id}/research-ingest/`), user groups, tiers, users/assignments, Copy Trade ingest, trades / positions, platform P&L (`/api/admin/...`). Built for a frontend admin page; Django admin is not required.\n- **Reference** — Service health check: `GET /api/health/`\n"
+        "description": "\nREST API for **Agentradez**.\n\nUsers connect a brokerage account, pick one Strategy and one Investment Tier for a single brokerage account, then the platform runs automatically.\n\n- **Auth** — Register (sends a verification email via **django-anymail** / **Resend** when `RESEND_API_KEY` is set; otherwise the console backend), login (JWT), refresh token, current user (`GET/PATCH /api/auth/me/`), `GET /api/auth/verify-email/?token=`, `POST /api/auth/verify-email/resend/`, `POST /api/auth/password-reset/`, `POST /api/auth/password-reset/confirm/`\n- **Profile** — `GET/PATCH /api/auth/profile/` (preferred language)\n- **Broker** — Connect Alpaca with API keys (`POST /api/broker-connections/`) or Robinhood via OAuth (`POST /api/broker-connections/robinhood/oauth/start/`, paste the localhost callback URL to `POST /api/broker-connections/robinhood/oauth/complete/`, optional GET callback `GET /api/broker-connections/robinhood/oauth/callback/`). List/select Agentic accounts (`GET /api/broker-connections/{id}/accounts/`, `GET /api/broker-connections/{id}/accounts/{account_number}/`, `POST /api/broker-connections/{id}/select-account/`). List Robinhood agent MCP tools (`GET /api/broker-connections/{id}/agent-tools/`). Disconnect (`POST /api/broker-connections/{id}/disconnect/`).\n- **Strategies** — List strategies this account can pick (`GET /api/strategies/`; public plus any restricted grants). Parsed signals for a strategy (`GET /api/strategies/{id}/signals/`)\n- **Tiers** — List investment tiers (`GET /api/investment-tiers/`)\n- **Assignment** — Select Strategy + Investment Tier for one brokerage account (`GET/PUT /api/assignment/`; `broker_account_id` binds it to a Robinhood Agentic account)\n- **Positions** — Open positions (`GET /api/positions/`; optional `broker_account_id`)\n- **Trades** — Trade history including cancelled unfilled orders (`GET /api/trades/`, `GET /api/trades/{id}/`; optional `broker_account_id`)\n- **Decisions** — Paper trail of how the assigned strategy processed signals and exits (`GET /api/decisions/`, `GET /api/decisions/{id}/`; optional `action`, `outcome`, `ticker`, `broker_account_id`)\n- **Performance** — Personal metrics including lifetime P&L (`GET /api/performance/`)\n- **Notifications** — Entry / skip / take-profit / exit notices, each linked to a decision when available (`GET /api/notifications/`, `POST /api/notifications/{id}/read/`, `POST /api/notifications/read-all/`; optional `broker_account_id`)\n- **Admin** — Staff JWT (`is_staff`): create/configure strategies (including Copy Trade `signal_source` plus nested X watcher with `poll_interval_seconds`, Research / Breakthrough watchlists, and visibility / user-group access), list tweets/signals/research events per strategy, look back N days on an X copy-trade account (`POST /api/admin/strategies/{id}/lookback/`), ingest a research headline (`POST /api/admin/strategies/{id}/research-ingest/`), user groups, tiers, users/assignments, Copy Trade ingest, trades / positions, platform P&L (`/api/admin/...`). Built for a frontend admin page; Django admin is not required.\n- **Reference** — Service health check: `GET /api/health/`\n"
     },
     "paths": {
         "/api/admin/decisions/": {
@@ -4319,6 +4319,33 @@
                 }
             }
         },
+        "/api/notifications/read-all/": {
+            "post": {
+                "operationId": "notifications_read_all_create",
+                "description": "Clears unread notices for this user so the badge resets.",
+                "summary": "Mark all notifications as read",
+                "tags": [
+                    "Notifications"
+                ],
+                "security": [
+                    {
+                        "jwtAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/NotificationReadAll"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
         "/api/notifications/{id}/read/": {
             "post": {
                 "operationId": "notifications_read_create",
@@ -6220,6 +6247,17 @@
                 "required": [
                     "kind",
                     "title"
+                ]
+            },
+            "NotificationReadAll": {
+                "type": "object",
+                "properties": {
+                    "updated": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "updated"
                 ]
             },
             "OptionTypeEnum": {

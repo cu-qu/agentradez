@@ -396,7 +396,7 @@ Users connect a brokerage account, pick one Strategy and one Investment Tier for
 - **Trades** — Trade history including pending working orders and cancelled unfilled orders (`GET /api/trades/`, `GET /api/trades/{id}/`; optional `broker_account_id`)
 - **Decisions** — Paper trail of how the assigned strategy processed signals and exits (`GET /api/decisions/`, `GET /api/decisions/{id}/`; optional `action`, `outcome`, `ticker`, `broker_account_id`)
 - **Performance** — Personal metrics including lifetime P&L (`GET /api/performance/`)
-- **Notifications** — Entry / skip / take-profit / exit notices, each linked to a decision when available (`GET /api/notifications/`, `POST /api/notifications/{id}/read/`; optional `broker_account_id`)
+- **Notifications** — Entry / skip / take-profit / exit notices, each linked to a decision when available (`GET /api/notifications/`, `POST /api/notifications/{id}/read/`, `POST /api/notifications/read-all/`; optional `broker_account_id`)
 - **Admin** — Staff JWT (`is_staff`): create/configure strategies (including Copy Trade `signal_source` plus nested X watcher with `poll_interval_seconds`, Research / Breakthrough watchlists, and visibility / user-group access), list tweets/signals/research events per strategy, look back N days on an X copy-trade account (`POST /api/admin/strategies/{id}/lookback/`), ingest a research headline (`POST /api/admin/strategies/{id}/research-ingest/`), user groups, tiers, users/assignments, Copy Trade ingest, trades / positions, platform P&L (`/api/admin/...`). Built for a frontend admin page; Django admin is not required.
 - **Reference** — Service health check: `GET /api/health/`
 """,
