@@ -52,14 +52,18 @@ export function NotificationBell() {
               Activity
             </span>
             <div className="flex items-center gap-3">
-              {unreadCount > 0 ? (
+              {unreadCount > 0 || markAllRead.isPending ? (
                 <button
                   type="button"
-                  onClick={() => markAllRead.mutate()}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    markAllRead.mutate();
+                  }}
                   disabled={markAllRead.isPending}
                   className="text-xs text-muted hover:text-foreground disabled:opacity-50"
                 >
-                  Clear all
+                  {markAllRead.isPending ? "Clearing…" : "Clear all"}
                 </button>
               ) : null}
               <Link
@@ -71,6 +75,11 @@ export function NotificationBell() {
               </Link>
             </div>
           </div>
+          {markAllRead.isError ? (
+            <p className="border-b border-border px-3 py-2 text-xs text-loss">
+              Could not clear notifications. Try again.
+            </p>
+          ) : null}
           <div className="max-h-96 overflow-y-auto">
             {items.length === 0 ? (
               <p className="px-3 py-8 text-center text-sm text-muted">

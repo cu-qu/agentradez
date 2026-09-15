@@ -230,11 +230,39 @@ export function useMarkNotificationRead() {
   });
 }
 
+function markCachedNotificationsRead(
+  queryClient: ReturnType<typeof useQueryClient>,
+) {
+  queryClient.setQueriesData(
+    { queryKey: ["notifications"] },
+    (old: Paginated<Notification> | undefined) => {
+      if (!old) return old;
+      return {
+        ...old,
+        results: old.results.map((item) => ({ ...item, is_read: true })),
+      };
+    },
+  );
+  queryClient.setQueryData(
+    queryKeys.notifications({ unread: true, broker_account_id: undefined }),
+    (old: Paginated<Notification> | undefined) =>
+      old ? { ...old, count: 0, next: null, previous: null, results: [] } : old,
+  );
+}
+
 export function useMarkAllNotificationsRead() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => api.post<{ updated: number }>("/api/notifications/read-all/"),
-    onSuccess: () => {
+    mutationFn: () =>
+      api.post<{ updated: number }>("/api/notifications/read-all/", {}),
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ["notifications"] });
+      markCachedNotificationsRead(queryClient);
+    },
+    onError: () => {
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+    onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ["notifications"] });
     },
   });
