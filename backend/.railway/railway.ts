@@ -52,7 +52,7 @@ const env = {
 
 export default defineRailway(() => {
   const source = github("cu-qu/agentradez", {
-    branch: "cursor/railway-iac-migration",
+    branch: "main",
     rootDirectory: "backend",
     checkSuites: false,
   });
