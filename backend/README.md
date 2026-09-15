@@ -248,15 +248,15 @@ Same canvas as crypto marketplace: one GitHub repo, three processes, Postgres + 
 └──────────────────┘ └──────────────────┘ └──────────────────┘
 ```
 
-| Service | Role | Config file (set on the service in Railway) |
+| Service | Role | Defined in `.railway/railway.ts` |
 |---|---|---|
-| `gunicorn api` | web | `railway_configs/api_server.toml` — collectstatic + gunicorn on `$PORT`, `preDeployCommand` = `bash ./build.sh` |
-| `celery worker` | worker | `railway_configs/celery_worker.toml` — `celery -A config worker -Q main -l info --autoscale 4,2` |
-| `celery beat` | worker | `railway_configs/celery_beat.toml` — `celery -A config beat -l info` |
+| `gunicorn api` | web | Railpack + gunicorn on `$PORT`, `preDeploy` = `bash ./build.sh`, healthcheck `/api/health/` |
+| `celery worker` | worker | `celery -A config worker -Q main,celery -l info --autoscale 4,2` |
+| `celery beat` | worker | `celery -A config beat -l info` |
 | Postgres | plugin | injects `DATABASE_URL` |
 | Redis | plugin | injects `REDIS_URL` |
 
-The root `Dockerfile` is local-only (`CMD sleep infinity`), same as crypto marketplace. Railway must **not** use it. Point each GitHub service at the toml file above (Settings → Config as Code → Config File Path).
+The root `Dockerfile` is local-only (`CMD sleep infinity`), same as crypto marketplace. Railway must **not** use it. `.railway/railway.ts` sets `builder: "RAILPACK"` on every GitHub service.
 
 `build.sh` (API pre-deploy): `pip install`, `migrate --noinput`, `collectstatic` for WhiteNoise, `setup_base_data`. The API image also collects static files at **build** and again on **start** (`scripts/start_gunicorn.sh`) so Django admin CSS is present in the running container. Worker and beat do not migrate.
 
@@ -269,9 +269,9 @@ railway login
 ./scripts/railway_agentradez.sh
 ```
 
-(`--dry-run` prints the steps without calling the CLI.) The script applies `.railway/railway.ts` so the canvas matches crypto marketplace (Postgres, Redis, gunicorn api, celery worker, celery beat) and generates a public domain on **gunicorn api**.
+Needs Railway CLI 5.42.1+ (`railway config`). (`--dry-run` prints the steps without calling the CLI.) The script applies `.railway/railway.ts` so the canvas matches crypto marketplace (Postgres, Redis, gunicorn api, celery worker, celery beat) and generates a public domain on **gunicorn api**.
 
-If you create services in the dashboard instead: New → GitHub → `cu-qu/agentradez` three times, name them as in the table, set each Config File Path, add Postgres + Redis, then share `DATABASE_URL` / `REDIS_URL` into all three.
+If you create services in the dashboard instead: New → GitHub → `cu-qu/agentradez` three times, name them as in the table, add Postgres + Redis, then `railway config apply` so `.railway/railway.ts` owns build/start/healthcheck. Do not set a Config as Code file path — a service cannot be managed by both systems.
 
 ### Required env (all three services)
 
@@ -316,7 +316,7 @@ Fork/create a `stage` environment (`railway environment new stage` or Railway MC
 
 ### Migrations
 
-They run on **gunicorn api** only, via `preDeployCommand` → `bash ./build.sh`. Worker and beat do not migrate.
+They run on **gunicorn api** only, via `preDeploy` → `bash ./build.sh`. Worker and beat do not migrate.
 
 ## Copying this boilerplate for a new product
 

@@ -30,7 +30,6 @@ Untitled/
 
 # Railway CLI link (keep .railway/railway.ts)
 .railway/config.json
-railway.json
 
 # Celery
 celerybeat-schedule

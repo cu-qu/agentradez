@@ -1,0 +1,8 @@
+{
+  "name": "agentradez-railway",
+  "private": true,
+  "description": "Railway IaC SDK for railway.ts (kept out of the service root so Railpack stays on Python)",
+  "dependencies": {
+    "railway": "^3.11.0"
+  }
+}

@@ -79,9 +79,9 @@ Same three-process layout as the source API. From `backend/`:
 
 | Service | Config |
 |---|---|
-| `gunicorn api` | `railway_configs/api_server.toml` — gunicorn on `$PORT`, `build.sh` migrates |
-| `celery worker` | `railway_configs/celery_worker.toml` |
-| `celery beat` | `railway_configs/celery_beat.toml` |
+| `gunicorn api` | `.railway/railway.ts` — gunicorn on `$PORT`, `build.sh` migrates |
+| `celery worker` | `.railway/railway.ts` — `celery -A config worker -Q main,celery` |
+| `celery beat` | `.railway/railway.ts` — `celery -A config beat` |
 
 Set `FRONTEND_URL` and `CORS_ALLOWED_ORIGINS` to `https://agentradez.com` (or Vercel). Add the Railway API host (and any custom domain) to `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS`.
 
