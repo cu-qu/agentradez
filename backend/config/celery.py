@@ -31,7 +31,7 @@ app.conf.beat_schedule = {
     "monitor-open-positions": {
         "task": "trading.monitor_open_positions",
         "schedule": 10.0,
-        "options": {"queue": "main"},
+        "options": {"queue": "main", "expires": 15},
     },
     "check-daily-loss-limits": {
         "task": "trading.check_daily_loss_limits",

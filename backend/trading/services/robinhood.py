@@ -381,12 +381,15 @@ class RobinhoodMcpClient:
         return headers
 
     def _post(self, payload: dict, retry: bool = True) -> tuple[str, requests.Response]:
-        response = requests.post(
-            mcp_url(),
-            json=payload,
-            headers=self._headers(),
-            timeout=HTTP_TIMEOUT,
-        )
+        try:
+            response = requests.post(
+                mcp_url(),
+                json=payload,
+                headers=self._headers(),
+                timeout=HTTP_TIMEOUT,
+            )
+        except requests.RequestException as exc:
+            raise RobinhoodError(f"Robinhood request failed: {exc}") from exc
         session_id = response.headers.get("Mcp-Session-Id")
         if session_id:
             self.session_id = session_id

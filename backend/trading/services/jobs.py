@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 
 from django.db import transaction
@@ -12,8 +13,11 @@ from trading.models import (
     Trade,
     UserStrategyAssignment,
 )
+from trading.services.broker_limits import broker_paused, pause_broker
 from trading.services.brokers import get_broker_client
 from trading.services.performance import refresh_account_and_platform_pnl
+
+logger = logging.getLogger(__name__)
 
 
 def reset_daily_flags() -> int:
@@ -30,6 +34,8 @@ def sync_broker_positions() -> int:
     synced = 0
     now = timezone.now()
     for connection in BrokerConnection.objects.filter(is_deleted=False):
+        if broker_paused(connection.pk):
+            continue
         client = get_broker_client(connection)
         try:
             equity = client.get_equity()
@@ -51,6 +57,13 @@ def sync_broker_positions() -> int:
             _import_connection_fills(connection)
             synced += 1
         except Exception as exc:  # noqa: BLE001 — isolate one bad broker from the batch
+            if pause_broker(connection.pk, exc):
+                logger.warning(
+                    "Pausing broker calls for connection %s during sync: %s",
+                    connection.pk,
+                    exc,
+                )
+                continue
             connection.status = BrokerConnection.Status.ERROR
             connection.last_error = str(exc)[:255]
             connection.save(update_fields=["status", "last_error", "updated_at"])

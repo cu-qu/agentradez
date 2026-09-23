@@ -21,6 +21,12 @@ from trading.models import (
     TradeEvent,
     UserStrategyAssignment,
 )
+from trading.services.broker_limits import (
+    broker_paused,
+    claim_reconcile_lock,
+    pause_broker,
+    release_reconcile_lock,
+)
 from trading.services.brokers import (
     BrokerError,
     FILLED_ORDER_STATUSES,
@@ -315,9 +321,18 @@ def _cancel_working_order(order: BrokerOrder, fill) -> bool:
     return True
 
 
+def _pause_if_retryable(connection_id: int, exc: BaseException, message: str) -> bool:
+    if not pause_broker(connection_id, exc):
+        return False
+    logger.warning("%s: %s", message, exc)
+    return True
+
+
 def _reconcile_order(order: BrokerOrder) -> bool:
     trade = order.trade
     if Position.objects.filter(trade=trade, status=Position.Status.OPEN).exists():
+        return False
+    if broker_paused(order.broker_connection_id):
         return False
     client = get_broker_client(order.broker_connection)
     try:
@@ -326,7 +341,14 @@ def _reconcile_order(order: BrokerOrder) -> bool:
             quantity=order.quantity,
             limit_price=trade.entry_price,
         )
-    except BrokerError:
+    except BrokerError as exc:
+        if _pause_if_retryable(
+            order.broker_connection_id,
+            exc,
+            f"Pausing broker calls for connection {order.broker_connection_id} "
+            f"after order {order.broker_order_id}",
+        ):
+            return False
         logger.exception(
             "Could not refresh working order %s for trade %s",
             order.broker_order_id,
@@ -533,11 +555,19 @@ def apply_broker_fill(connection: BrokerConnection, row: dict) -> bool:
 
 
 def _import_connection_fills(connection: BrokerConnection) -> int:
+    if broker_paused(connection.pk):
+        return 0
     try:
         client = get_broker_client(connection)
         orders = client.list_option_orders()
         positions = client.list_open_option_positions()
-    except BrokerError:
+    except BrokerError as exc:
+        if _pause_if_retryable(
+            connection.pk,
+            exc,
+            f"Pausing broker calls for connection {connection.pk} during fill import",
+        ):
+            return 0
         logger.exception("Could not import broker fills for connection %s", connection.pk)
         return 0
     updated = 0
@@ -557,12 +587,29 @@ def _import_connection_fills(connection: BrokerConnection) -> int:
 
 
 def reconcile_working_orders() -> int:
+    if not claim_reconcile_lock():
+        logger.info("reconcile_working_orders skipped; another run is in progress")
+        return 0
+    try:
+        return _reconcile_working_orders()
+    finally:
+        release_reconcile_lock()
+
+
+def _reconcile_working_orders() -> int:
     updated = 0
     for order in _orders_to_reconcile():
         try:
             if _reconcile_order(order):
                 updated += 1
-        except Exception:  # noqa: BLE001 — isolate one bad order from the batch
+        except Exception as exc:  # noqa: BLE001 — isolate one bad order from the batch
+            if _pause_if_retryable(
+                order.broker_connection_id,
+                exc,
+                f"Pausing broker calls for connection {order.broker_connection_id} "
+                f"after order {order.broker_order_id}",
+            ):
+                continue
             logger.exception(
                 "Failed reconciling working order %s",
                 order.pk,
@@ -570,6 +617,12 @@ def reconcile_working_orders() -> int:
     for connection in BrokerConnection.objects.filter(is_deleted=False):
         try:
             updated += _import_connection_fills(connection)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            if _pause_if_retryable(
+                connection.pk,
+                exc,
+                f"Pausing broker calls for connection {connection.pk} during fill import",
+            ):
+                continue
             logger.exception("Failed importing fills for connection %s", connection.pk)
     return updated

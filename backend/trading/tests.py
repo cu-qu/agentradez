@@ -171,6 +171,9 @@ class TradingApiTests(TradingMixin, TestCase):
 
 class SignalWorkflowTests(TradingMixin, TestCase):
     def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
         self.seed()
         self.user = self.make_user()
         self.connect_broker(self.user)
@@ -566,6 +569,72 @@ class SignalWorkflowTests(TradingMixin, TestCase):
         self.assertEqual(
             BrokerOrder.objects.get(trade=trade).status, BrokerOrder.Status.FILLED
         )
+
+    def test_rate_limit_pauses_further_broker_reconcile(self):
+        from trading.services.brokers import BrokerError
+        from trading.services.order_sync import reconcile_working_orders
+
+        fill = OrderFill(
+            broker_order_id="rh-working-rate-1",
+            status="submitted",
+            filled_quantity=0,
+            filled_avg_price=Decimal("2.00"),
+        )
+        with patch(
+            "trading.services.brokers.StubBrokerClient.buy_to_open",
+            return_value=fill,
+        ):
+            process_signal(self.make_signal(), live_price="2.00")
+        limited = BrokerError(
+            "error: RATE_LIMITED: too many requests, please try again shortly"
+        )
+        with patch(
+            "trading.services.brokers.StubBrokerClient.get_order",
+            side_effect=limited,
+        ) as get_order, patch(
+            "trading.services.brokers.StubBrokerClient.list_option_orders",
+        ) as listed, patch(
+            "trading.services.brokers.StubBrokerClient.list_open_option_positions",
+        ) as positions:
+            self.assertEqual(reconcile_working_orders(), 0)
+            self.assertEqual(reconcile_working_orders(), 0)
+        self.assertEqual(get_order.call_count, 1)
+        listed.assert_not_called()
+        positions.assert_not_called()
+        trade = Trade.objects.get(user=self.user)
+        self.assertEqual(trade.status, Trade.Status.PENDING)
+
+    def test_reconcile_skips_when_another_run_holds_the_lock(self):
+        from trading.services.broker_limits import claim_reconcile_lock, release_reconcile_lock
+        from trading.services.order_sync import reconcile_working_orders
+
+        self.assertTrue(claim_reconcile_lock())
+        try:
+            with patch(
+                "trading.services.brokers.StubBrokerClient.list_option_orders",
+            ) as listed:
+                self.assertEqual(reconcile_working_orders(), 0)
+            listed.assert_not_called()
+        finally:
+            release_reconcile_lock()
+
+    def test_sync_does_not_mark_connection_down_on_rate_limit(self):
+        from trading.services.brokers import BrokerError
+        from trading.services.jobs import sync_broker_positions
+
+        connection = BrokerConnection.objects.get(user=self.user)
+        client = patch(
+            "trading.services.jobs.get_broker_client",
+        )
+        with client as get_client:
+            broker = get_client.return_value
+            broker.get_equity.side_effect = BrokerError("API error 502: <html>")
+            self.assertEqual(sync_broker_positions(), 0)
+            self.assertEqual(sync_broker_positions(), 0)
+        self.assertEqual(broker.get_equity.call_count, 1)
+        connection.refresh_from_db()
+        self.assertEqual(connection.status, BrokerConnection.Status.CONNECTED)
+        self.assertEqual(connection.last_error, "")
 
     def test_skip_on_slippage(self):
         signal = self.make_signal(suggested_entry_price="2.00")
