@@ -1,9 +1,0 @@
-[build]
-builder = "RAILPACK"
-
-[deploy]
-preDeployCommand = ["bash ./build.sh"]
-startCommand = "bash ./scripts/start_gunicorn.sh"
-healthcheckPath = "/api/health/"
-healthcheckTimeout = 300
-restartPolicyType = "ALWAYS"
