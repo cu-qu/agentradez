@@ -1,6 +1,0 @@
-[build]
-builder = "RAILPACK"
-
-[deploy]
-startCommand = "celery -A config worker -Q main,celery -l info --autoscale 4,2"
-restartPolicyType = "ON_FAILURE"
