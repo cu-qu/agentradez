@@ -69,21 +69,9 @@ The web app calls the API at `http://localhost:8002`.
 
 Optional single-app containers are still in the picker: **agentradez backend** and **agentradez web**. You can also open `backend/` or `web/` on its own and reopen that folder in its container.
 
-## Railway
+## Production
 
-Same three-process layout as the source API. From `backend/`:
-
-```bash
-./scripts/railway_agentradez.sh
-```
-
-| Service | Config |
-|---|---|
-| `gunicorn api` | `.railway/railway.ts` — gunicorn on `$PORT`, `build.sh` migrates |
-| `celery worker` | `.railway/railway.ts` — `celery -A config worker -Q main,celery` |
-| `celery beat` | `.railway/railway.ts` — `celery -A config beat` |
-
-Set `FRONTEND_URL` and `CORS_ALLOWED_ORIGINS` to `https://agentradez.com` (or Vercel). Add the Railway API host (and any custom domain) to `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS`.
+`.github/workflows/image.yml` builds `ghcr.io/cu-qu/agentradez-api` and `ghcr.io/cu-qu/agentradez-web`. `cu-qu/cuqulabs-core-services` deploys those images. The public names are `agentradez.com`, `www.agentradez.com`, and `api.agentradez.com`. Railway and Vercel are not the production host.
 
 ## Payments
 
@@ -91,7 +79,7 @@ Stripe **subscription** (`backend/billing/`, `/api/billing/`). Free is the defau
 
 Required backend env: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_YEARLY`.
 
-Webhook: `https://<railway-api-host>/api/billing/webhooks/stripe/`
+Webhook: `https://api.agentradez.com/api/billing/webhooks/stripe/`
 
 ```bash
 python manage.py grant_subscription friend@example.com --plan yearly
