@@ -7,9 +7,13 @@ CONTRACT_MULTIPLIER = Decimal("100")
 
 BROKER_ALPACA = "alpaca"
 BROKER_ROBINHOOD = "robinhood"
+BROKER_KALSHI = "kalshi"
+BROKER_COINBASE = "coinbase"
 BROKER_CHOICES = (
     (BROKER_ALPACA, "Alpaca"),
     (BROKER_ROBINHOOD, "Robinhood"),
+    (BROKER_KALSHI, "Kalshi"),
+    (BROKER_COINBASE, "Coinbase"),
 )
 
 OPTION_CALL = "call"

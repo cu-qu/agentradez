@@ -8,13 +8,13 @@ from django.utils import timezone
 from accounts.models import User
 from execution.constants import POSITION_OPEN, SIGNAL_OPEN, SIGNAL_PENDING
 from execution.models import ExecutionAccount, HarnessJournal, HarnessSignal
-from execution.services.adapters import CoinbaseDeskAdapter, KalshiDeskAdapter, StubDeskAdapter
+from execution.services.adapters import StubDeskAdapter
 from execution.services.caps import CapViolation, check_caps
 from execution.services.ingest import ingest_signal
 from execution.services.rules_engine import evaluate_signal
 from trading.constants import BROKER_ALPACA
 from trading.models import BrokerConnection
-from trading.services.brokers import OrderFill, OptionQuote
+from trading.services.brokers import OrderFill
 
 
 class ExecutionHarnessTests(TestCase):
@@ -86,14 +86,16 @@ class ExecutionHarnessTests(TestCase):
 
     @patch("execution.services.rules_engine.desk_adapter_for")
     def test_rules_engine_dry_run_entry_and_exit(self, desk_for):
-        mock_client = MagicMock()
-        mock_client.get_option_market.side_effect = [
-            OptionQuote(mark=Decimal("1.20")),
-            OptionQuote(mark=Decimal("0.40")),
+        from execution.services.harness_client import MarketQuote
+
+        mock_harness = MagicMock()
+        mock_harness.get_quote.side_effect = [
+            MarketQuote(mark=Decimal("1.20")),
+            MarketQuote(mark=Decimal("0.40")),
         ]
-        mock_client.buy_to_open.return_value = OrderFill("b1", "filled", 1, Decimal("1.20"))
-        mock_client.sell_to_close.return_value = OrderFill("s1", "filled", 1, Decimal("2.00"))
-        desk_for.return_value = MagicMock(client=lambda: mock_client)
+        mock_harness.place_limit_entry.return_value = OrderFill("b1", "filled", 1, Decimal("1.20"))
+        mock_harness.place_limit_exit.return_value = OrderFill("s1", "filled", 1, Decimal("2.00"))
+        desk_for.return_value = MagicMock(harness_client=lambda: mock_harness)
 
         signal = HarnessSignal.objects.create(
             ref_id="eval-1",
@@ -116,11 +118,18 @@ class ExecutionHarnessTests(TestCase):
         signal.refresh_from_db()
         self.assertEqual(signal.status, "closed")
 
-    def test_placeholder_adapters(self):
-        kalshi = KalshiDeskAdapter("kalshi-desk", "Kalshi", dry_run=True)
-        coinbase = CoinbaseDeskAdapter("cb-desk", "Coinbase", dry_run=True)
-        self.assertEqual(kalshi.snapshot_accounts()[0].broker, "kalshi")
-        self.assertFalse(coinbase.snapshot_accounts()[0].trading_enabled)
+    @patch("execution.services.adapters.KalshiRestClient")
+    def test_kalshi_desk_snapshot(self, client_cls):
+        from execution.services.adapters import KalshiDeskAdapter
+        from trading.constants import BROKER_KALSHI
+
+        client_cls.return_value.balance.return_value = {"balance": {"balance": 2500}}
+        self.connection.broker = BROKER_KALSHI
+        self.connection.save(update_fields=["broker", "updated_at"])
+        adapter = KalshiDeskAdapter(self.connection, "kalshi-desk", "Kalshi", dry_run=True)
+        snap = adapter.snapshot_accounts()[0]
+        self.assertEqual(snap.broker, BROKER_KALSHI)
+        self.assertTrue(snap.trading_enabled)
 
     def test_stub_desk_adapter_snapshot(self):
         adapter = StubDeskAdapter(self.connection, "prop-desk", "label", True)
