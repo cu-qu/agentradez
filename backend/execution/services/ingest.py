@@ -93,9 +93,17 @@ def ingest_signal(payload: dict) -> dict:
         raise IngestError("invalid_quantity", "size must be >= 1.")
 
     try:
-        check_caps(account, additional_contracts=1, entry_limit_price=entry_price, quantity=quantity)
+        check_caps(
+            account,
+            market=market,
+            additional_contracts=1,
+            entry_limit_price=entry_price,
+            quantity=quantity,
+        )
         if entry_price is not None and stop_price is not None:
-            check_stop_within_max_loss(account, entry_price, stop_price, quantity)
+            check_stop_within_max_loss(
+                account, entry_price, stop_price, quantity, market=market
+            )
     except CapViolation as exc:
         raise IngestError(exc.code, str(exc)) from exc
 

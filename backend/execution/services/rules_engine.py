@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
 from decimal import Decimal
 
 from django.utils import timezone
 
 from execution.constants import (
-    MARKET_OPTIONS,
     ORDER_ENTRY,
     ORDER_EXIT,
     ORDER_FILLED,
@@ -32,16 +30,9 @@ from execution.models import (
 )
 from execution.services.adapters import desk_adapter_for
 from execution.services.caps import CapViolation, check_caps
+from execution.services.harness_client import FILLED_STATUSES, TERMINAL_UNFILLED, WORKING_STATUSES, market_multiplier
 from execution.services.journal import journal
-from trading.constants import CONTRACT_MULTIPLIER, OPTION_CALL, OPTION_PUT
-from trading.services.brokers import (
-    FILLED_ORDER_STATUSES,
-    TERMINAL_UNFILLED_STATUSES,
-    WORKING_ORDER_STATUSES,
-    BrokerError,
-    option_pnl,
-    unrealized_pnl,
-)
+from trading.services.brokers import BrokerError
 logger = logging.getLogger(__name__)
 
 
@@ -92,7 +83,13 @@ def _place_entry(signal: HarnessSignal, limit_price: Decimal) -> HarnessOrder | 
     account = signal.execution_account
     dry_run = _effective_dry_run(account)
     try:
-        check_caps(account, additional_contracts=1, entry_limit_price=limit_price, quantity=signal.quantity)
+        check_caps(
+            account,
+            market=signal.market,
+            additional_contracts=1,
+            entry_limit_price=limit_price,
+            quantity=signal.quantity,
+        )
     except CapViolation as exc:
         signal.status = SIGNAL_REJECTED
         signal.reject_reason = str(exc)
@@ -128,14 +125,7 @@ def _place_entry(signal: HarnessSignal, limit_price: Decimal) -> HarnessOrder | 
 
     adapter = desk_adapter_for(account)
     try:
-        fill = adapter.client().buy_to_open(
-            signal.symbol,
-            signal.option_type or OPTION_CALL,
-            signal.strike or Decimal("0"),
-            signal.expiration or date.today(),
-            signal.quantity,
-            limit_price,
-        )
+        fill = adapter.harness_client().place_limit_entry(signal, signal.quantity, limit_price)
     except BrokerError as exc:
         order.status = "rejected"
         order.save(update_fields=["status", "updated_at"])
@@ -148,12 +138,12 @@ def _place_entry(signal: HarnessSignal, limit_price: Decimal) -> HarnessOrder | 
     order.broker_order_id = fill.broker_order_id
     order.filled_quantity = fill.filled_quantity
     order.filled_avg_price = fill.filled_avg_price
-    if fill.status in FILLED_ORDER_STATUSES or fill.filled_quantity >= signal.quantity:
+    if fill.status in FILLED_STATUSES or fill.filled_quantity >= signal.quantity:
         order.status = ORDER_FILLED
         order.save()
         _open_position_from_fill(signal, fill.filled_avg_price or limit_price, fill.filled_quantity)
         journal("entry_filled", execution_account=account, signal=signal, detail={"order_id": fill.broker_order_id})
-    elif fill.status in WORKING_ORDER_STATUSES:
+    elif fill.status in WORKING_STATUSES:
         order.save()
         journal("entry_submitted", execution_account=account, signal=signal, detail={"order_id": fill.broker_order_id})
     else:
@@ -191,21 +181,19 @@ def _reconcile_working_entry(signal: HarnessSignal, order: HarnessOrder) -> None
         return
     adapter = desk_adapter_for(account)
     try:
-        fill = adapter.client().get_order(
-            order.broker_order_id, order.quantity, order.limit_price
-        )
+        fill = adapter.harness_client().fetch_order(order.broker_order_id)
     except BrokerError:
         return
     if fill is None:
         return
     order.filled_quantity = fill.filled_quantity
     order.filled_avg_price = fill.filled_avg_price
-    if fill.status in FILLED_ORDER_STATUSES or fill.filled_quantity >= order.quantity:
+    if fill.status in FILLED_STATUSES or fill.filled_quantity >= order.quantity:
         order.status = ORDER_FILLED
         order.save()
         _open_position_from_fill(signal, fill.filled_avg_price or order.limit_price, fill.filled_quantity)
         journal("entry_filled_reconcile", execution_account=account, signal=signal, detail={})
-    elif fill.status in TERMINAL_UNFILLED_STATUSES:
+    elif fill.status in TERMINAL_UNFILLED:
         order.status = "cancelled"
         order.save()
         signal.status = SIGNAL_CANCELLED
@@ -236,14 +224,7 @@ def _exit_position(signal: HarnessSignal, position: HarnessPosition, quantity: i
 
     adapter = desk_adapter_for(account)
     try:
-        fill = adapter.client().sell_to_close(
-            signal.symbol,
-            signal.option_type or OPTION_CALL,
-            signal.strike or Decimal("0"),
-            signal.expiration or date.today(),
-            quantity,
-            limit_price,
-        )
+        fill = adapter.harness_client().place_limit_exit(signal, quantity, limit_price)
     except BrokerError as exc:
         journal("exit_rejected", execution_account=account, signal=signal, detail={"error": str(exc), "reason": reason})
         return
@@ -251,7 +232,7 @@ def _exit_position(signal: HarnessSignal, position: HarnessPosition, quantity: i
     order.broker_order_id = fill.broker_order_id
     order.filled_quantity = fill.filled_quantity
     order.filled_avg_price = fill.filled_avg_price
-    if fill.status in FILLED_ORDER_STATUSES or fill.filled_quantity >= quantity:
+    if fill.status in FILLED_STATUSES or fill.filled_quantity >= quantity:
         order.status = ORDER_FILLED
         order.save()
         _apply_exit_fill(position, signal, fill.filled_quantity, fill.filled_avg_price or limit_price)
@@ -274,7 +255,8 @@ def _apply_exit_fill(position: HarnessPosition, signal: HarnessSignal, quantity:
 def _manage_open(signal: HarnessSignal, position: HarnessPosition, mark: Decimal) -> None:
     entry = position.average_entry_price
     position.current_price = mark
-    position.unrealized_pnl = unrealized_pnl(entry, mark, position.remaining_quantity)
+    mult = market_multiplier(signal.market)
+    position.unrealized_pnl = (mark - entry) * mult * Decimal(position.remaining_quantity)
     position.save(update_fields=["current_price", "unrealized_pnl", "updated_at"])
 
     account = signal.execution_account
@@ -326,18 +308,10 @@ def evaluate_signal(signal: HarnessSignal) -> None:
         journal("signal_expired", execution_account=signal.execution_account, signal=signal, detail={})
         return
 
-    if signal.market != MARKET_OPTIONS:
-        return
-
     account = signal.execution_account
     adapter = desk_adapter_for(account)
     try:
-        quote = adapter.client().get_option_market(
-            signal.symbol,
-            signal.option_type or OPTION_CALL,
-            signal.strike or Decimal("0"),
-            signal.expiration or date.today(),
-        )
+        quote = adapter.harness_client().get_quote(signal)
         mark = quote.mark
     except BrokerError as exc:
         logger.warning("quote_failed signal=%s err=%s", signal.ref_id, exc)

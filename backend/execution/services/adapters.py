@@ -2,26 +2,28 @@
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import date
 from decimal import Decimal
 
-from trading.constants import BROKER_ALPACA, BROKER_ROBINHOOD
-from trading.models import BrokerConnection
-from trading.services.brokers import (
-    BrokerClient,
-    BrokerError,
-    OrderFill,
-    get_broker_client,
+from trading.constants import (
+    BROKER_ALPACA,
+    BROKER_COINBASE,
+    BROKER_KALSHI,
+    BROKER_ROBINHOOD,
 )
+from trading.models import BrokerConnection
+from trading.services.brokers import BrokerClient, BrokerError, get_broker_client
 from trading.services.robinhood import (
     RobinhoodError,
     list_accounts_for,
-    portfolio_spendable,
-    portfolio_equity,
     mcp_client_for,
+    portfolio_equity,
+    portfolio_spendable,
 )
+
+from execution.services.coinbase_api import CoinbaseAdvancedClient, CoinbaseApiError, accounts_buying_power
+from execution.services.harness_client import HarnessBrokerClient, harness_client_for
+from execution.services.kalshi_api import KalshiApiError, KalshiRestClient, balance_buying_power_usd
 
 
 @dataclass
@@ -37,26 +39,33 @@ class DeskAccountSnapshot:
     dry_run: bool
 
 
-class DeskBrokerAdapter(ABC):
-    @abstractmethod
-    def snapshot_accounts(self) -> list[DeskAccountSnapshot]:
-        raise NotImplementedError
-
-    @abstractmethod
-    def client(self) -> BrokerClient:
-        raise NotImplementedError
-
-
-class RobinhoodDeskAdapter(DeskBrokerAdapter):
-    def __init__(self, connection: BrokerConnection, account_slug: str, label: str, dry_run: bool):
+class DeskBrokerAdapter:
+    def __init__(
+        self,
+        connection: BrokerConnection,
+        account_slug: str,
+        label: str,
+        dry_run: bool,
+    ):
         self.connection = connection
         self.account_slug = account_slug
         self.label = label
         self.dry_run = dry_run
 
+    def harness_client(self) -> HarnessBrokerClient:
+        return harness_client_for(self.connection)
+
     def client(self) -> BrokerClient:
+        """Legacy options broker — Robinhood/Alpaca only."""
+        if self.connection.broker in (BROKER_KALSHI, BROKER_COINBASE):
+            raise BrokerError("Use harness_client() for Kalshi/Coinbase.")
         return get_broker_client(self.connection)
 
+    def snapshot_accounts(self) -> list[DeskAccountSnapshot]:
+        raise NotImplementedError
+
+
+class RobinhoodDeskAdapter(DeskBrokerAdapter):
     def snapshot_accounts(self) -> list[DeskAccountSnapshot]:
         snapshots: list[DeskAccountSnapshot] = []
         try:
@@ -109,19 +118,8 @@ class RobinhoodDeskAdapter(DeskBrokerAdapter):
 
 
 class StubDeskAdapter(DeskBrokerAdapter):
-    """Alpaca / paper connections use the existing stub broker."""
-
-    def __init__(self, connection: BrokerConnection, account_slug: str, label: str, dry_run: bool):
-        self.connection = connection
-        self.account_slug = account_slug
-        self.label = label
-        self.dry_run = dry_run
-
-    def client(self) -> BrokerClient:
-        return get_broker_client(self.connection)
-
     def snapshot_accounts(self) -> list[DeskAccountSnapshot]:
-        client = self.client()
+        client = get_broker_client(self.connection)
         equity = client.get_equity()
         capital = client.get_capital()
         return [
@@ -140,54 +138,48 @@ class StubDeskAdapter(DeskBrokerAdapter):
 
 
 class KalshiDeskAdapter(DeskBrokerAdapter):
-    """Placeholder adapter — live RSA-PSS REST in a follow-up PR."""
-
-    def __init__(self, account_slug: str, label: str, dry_run: bool):
-        self.account_slug = account_slug
-        self.label = label
-        self.dry_run = dry_run
-
-    def client(self) -> BrokerClient:
-        raise BrokerError("Kalshi adapter not wired in this PR.")
-
     def snapshot_accounts(self) -> list[DeskAccountSnapshot]:
+        try:
+            client = KalshiRestClient()
+            balance = client.balance()
+            buying_power = balance_buying_power_usd(balance)
+        except KalshiApiError:
+            buying_power = None
+        account_id = self.connection.broker_account_id or "primary"
         return [
             DeskAccountSnapshot(
                 account_slug=self.account_slug,
-                broker="kalshi",
-                broker_account_id="pending",
+                broker=BROKER_KALSHI,
+                broker_account_id=account_id,
                 label=self.label,
-                equity=None,
-                buying_power=None,
-                option_level=None,
-                trading_enabled=False,
+                equity=buying_power,
+                buying_power=buying_power,
+                option_level="event_contracts",
+                trading_enabled=buying_power is not None,
                 dry_run=self.dry_run,
             )
         ]
 
 
 class CoinbaseDeskAdapter(DeskBrokerAdapter):
-    """Placeholder adapter — Advanced Trade spot in a follow-up PR."""
-
-    def __init__(self, account_slug: str, label: str, dry_run: bool):
-        self.account_slug = account_slug
-        self.label = label
-        self.dry_run = dry_run
-
-    def client(self) -> BrokerClient:
-        raise BrokerError("Coinbase adapter not wired in this PR.")
-
     def snapshot_accounts(self) -> list[DeskAccountSnapshot]:
+        try:
+            client = CoinbaseAdvancedClient()
+            payload = client.list_accounts()
+            equity, buying_power = accounts_buying_power(payload)
+        except CoinbaseApiError:
+            equity, buying_power = None, None
+        account_id = self.connection.broker_account_id or "spot"
         return [
             DeskAccountSnapshot(
                 account_slug=self.account_slug,
-                broker="coinbase",
-                broker_account_id="pending",
+                broker=BROKER_COINBASE,
+                broker_account_id=account_id,
                 label=self.label,
-                equity=None,
-                buying_power=None,
-                option_level=None,
-                trading_enabled=False,
+                equity=equity,
+                buying_power=buying_power,
+                option_level="spot",
+                trading_enabled=buying_power is not None,
                 dry_run=self.dry_run,
             )
         ]
@@ -203,8 +195,8 @@ def desk_adapter_for(execution_account) -> DeskBrokerAdapter:
         return RobinhoodDeskAdapter(connection, slug, label, dry_run)
     if broker == BROKER_ALPACA:
         return StubDeskAdapter(connection, slug, label, dry_run)
-    if broker == "kalshi":
-        return KalshiDeskAdapter(slug, label, dry_run)
-    if broker == "coinbase":
-        return CoinbaseDeskAdapter(slug, label, dry_run)
+    if broker == BROKER_KALSHI:
+        return KalshiDeskAdapter(connection, slug, label, dry_run)
+    if broker == BROKER_COINBASE:
+        return CoinbaseDeskAdapter(connection, slug, label, dry_run)
     return StubDeskAdapter(connection, slug, label, dry_run)

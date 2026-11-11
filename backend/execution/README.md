@@ -84,3 +84,60 @@ No new image: the harness rides in `agentradez-api` and `celery` / `celery-beat`
 2. `curl -H "Authorization: Bearer $TOKEN" -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' $API/api/mcp/execution/`
 3. Ingest sample signal; confirm journal + beat opens position in dry-run
 4. Flip `dry_run` off only in a paper account after caps review
+
+## Kalshi & Coinbase
+
+Set broker env vars on API + Celery (see tables below). Link `BrokerConnection.broker` to `kalshi` or `coinbase` and use harness `market` `kalshi` / `coinbase`.
+
+### Sample Kalshi signal
+
+```json
+{
+  "ref_id": "kalshi-book-k-001",
+  "account_slug": "prop-kalshi",
+  "market": "kalshi",
+  "symbol": "KXHIGHNY-25NOV11-T72",
+  "side": "buy",
+  "entry_rule": { "type": "limit", "price": "0.42", "kalshi_side": "yes" },
+  "stop": "0.30",
+  "size": 10,
+  "expiry": "2026-04-04T21:00:00Z"
+}
+```
+
+### Sample Coinbase spot signal
+
+```json
+{
+  "ref_id": "cb-btc-001",
+  "account_slug": "prop-coinbase",
+  "market": "coinbase",
+  "symbol": "BTC-USD",
+  "side": "buy",
+  "entry_rule": { "type": "limit", "price": "95000.00" },
+  "stop": "92000.00",
+  "size": 1,
+  "expiry": "2026-04-04T21:00:00Z"
+}
+```
+
+### Kalshi env vars
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `KALSHI_API_KEY_ID` | Yes | Kalshi API key id |
+| `KALSHI_PRIVATE_KEY_PEM` | Yes* | RSA private key PEM |
+| `KALSHI_PRIVATE_KEY_FILE` | Yes* | Path to PEM in container |
+| `KALSHI_API_BASE_URL` | No | Overrides demo/prod base |
+| `KALSHI_USE_DEMO` | No | Default `true` (demo host) |
+
+### Coinbase Advanced Trade env vars
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `COINBASE_ADVANCED_API_KEY_NAME` | Yes | `organizations/.../apiKeys/...` |
+| `COINBASE_ADVANCED_API_PRIVATE_KEY_PEM` | Yes* | ES256 EC private key |
+| `COINBASE_ADVANCED_API_PRIVATE_KEY_FILE` | Yes* | Path to key file |
+| `COINBASE_ADVANCED_API_BASE_URL` | No | Default `https://api.coinbase.com` |
+
+\* Provide PEM **or** file path, not both required.
