@@ -29,6 +29,7 @@ urlpatterns = [
     path("api/auth/", include("accounts.urls")),
     path("api/", include("billing.urls")),
     path("api/", include("trading.urls")),
+    path("api/", include("execution.urls")),
     path("api/health/", HealthCheckView.as_view(), name="health-check"),
     path("api/schema/", PublicSchemaView.as_view(), name="schema"),
     path("api/docs/", PublicSwaggerView.as_view(url_name="schema"), name="swagger-ui"),

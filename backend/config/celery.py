@@ -78,4 +78,9 @@ app.conf.beat_schedule = {
         "schedule": crontab(hour=3, minute=0, day_of_week="sun"),
         "options": {"queue": "main"},
     },
+    "evaluate-harness-rules": {
+        "task": "execution.evaluate_harness_rules",
+        "schedule": float(os.environ.get("EXECUTION_RULES_INTERVAL_SECONDS", "60")),
+        "options": {"queue": "main", "expires": 90},
+    },
 }
