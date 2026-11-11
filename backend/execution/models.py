@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
@@ -24,9 +25,14 @@ from .constants import (
 
 
 class ExecutionAccount(models.Model):
-    """Desk account wired to an existing BrokerConnection (isolated from user UI flows)."""
+    """Per-user execution desk account linked to one BrokerConnection."""
 
-    slug = models.SlugField(max_length=64, unique=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="execution_accounts",
+    )
+    slug = models.SlugField(max_length=64)
     label = models.CharField(max_length=128)
     broker_connection = models.ForeignKey(
         BrokerConnection,
@@ -61,13 +67,103 @@ class ExecutionAccount(models.Model):
 
     class Meta:
         ordering = ["slug"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "slug"],
+                name="unique_execution_account_slug_per_user",
+            )
+        ]
 
     def __str__(self):
-        return self.slug
+        return f"{self.user_id}:{self.slug}"
+
+
+class ExecutionAgentToken(models.Model):
+    """Personal access token for user's MCP agents (shown once at creation)."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="execution_agent_tokens",
+    )
+    label = models.CharField(max_length=128)
+    token_prefix = models.CharField(max_length=16, db_index=True)
+    token_hash = models.CharField(max_length=64)
+    scopes = models.JSONField(default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
+class ExecutionOAuthClient(models.Model):
+    """Registered OAuth client (per user) for third-party MCP agents."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="execution_oauth_clients",
+    )
+    name = models.CharField(max_length=128)
+    client_id = models.CharField(max_length=64, unique=True, db_index=True)
+    client_secret_hash = models.CharField(max_length=64)
+    redirect_uris = models.JSONField(default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
+class ExecutionOAuthCode(models.Model):
+    code = models.CharField(max_length=64, unique=True, db_index=True)
+    client = models.ForeignKey(
+        ExecutionOAuthClient, on_delete=models.CASCADE, related_name="codes"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="execution_oauth_codes",
+    )
+    scopes = models.JSONField(default=list)
+    code_challenge = models.CharField(max_length=128)
+    code_challenge_method = models.CharField(max_length=16, default="S256")
+    redirect_uri = models.URLField(max_length=512)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    def is_valid(self) -> bool:
+        return self.used_at is None and timezone.now() < self.expires_at
+
+
+class ExecutionMcpAccessGrant(models.Model):
+    """Issued OAuth access token (hash only)."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="execution_mcp_grants",
+    )
+    client = models.ForeignKey(
+        ExecutionOAuthClient, on_delete=models.CASCADE, related_name="grants"
+    )
+    access_token_hash = models.CharField(max_length=64, db_index=True)
+    scopes = models.JSONField(default=list)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
 
 
 class HarnessSignal(models.Model):
-    ref_id = models.CharField(max_length=128, unique=True, db_index=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="harness_signals",
+    )
+    ref_id = models.CharField(max_length=128, db_index=True)
     execution_account = models.ForeignKey(
         ExecutionAccount,
         on_delete=models.PROTECT,
@@ -109,6 +205,12 @@ class HarnessSignal(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "ref_id"],
+                name="unique_harness_ref_id_per_user",
+            )
+        ]
 
     def __str__(self):
         return self.ref_id
@@ -118,8 +220,18 @@ class HarnessSignal(models.Model):
             return True
         return False
 
+    def save(self, *args, **kwargs):
+        if self.execution_account_id and not self.user_id:
+            self.user_id = self.execution_account.user_id
+        super().save(*args, **kwargs)
+
 
 class HarnessPosition(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="harness_positions",
+    )
     signal = models.OneToOneField(
         HarnessSignal, on_delete=models.CASCADE, related_name="position"
     )
@@ -171,6 +283,13 @@ class HarnessOrder(models.Model):
 
 
 class HarnessJournal(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="harness_journal",
+        null=True,
+        blank=True,
+    )
     execution_account = models.ForeignKey(
         ExecutionAccount,
         on_delete=models.CASCADE,

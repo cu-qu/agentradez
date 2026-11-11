@@ -30,6 +30,8 @@ from execution.models import (
 )
 from execution.services.adapters import desk_adapter_for
 from execution.services.caps import CapViolation, check_caps
+from execution.services.platform_caps import clamp_account_caps
+from trading.services.broker_limits import broker_paused, pause_broker
 from execution.services.harness_client import FILLED_STATUSES, TERMINAL_UNFILLED, WORKING_STATUSES, market_multiplier
 from execution.services.journal import journal
 from trading.services.brokers import BrokerError
@@ -161,6 +163,7 @@ def _open_position_from_fill(signal: HarnessSignal, entry_price: Decimal, quanti
     HarnessPosition.objects.update_or_create(
         signal=signal,
         defaults={
+            "user": signal.user,
             "execution_account": signal.execution_account,
             "quantity": quantity,
             "remaining_quantity": quantity,
@@ -347,11 +350,29 @@ def evaluate_all_signals() -> int:
     count = 0
     qs = HarnessSignal.objects.filter(
         status__in=(SIGNAL_PENDING, SIGNAL_WORKING_ENTRY, SIGNAL_OPEN)
-    ).select_related("execution_account", "execution_account__broker_connection")
+    ).select_related(
+        "execution_account",
+        "execution_account__broker_connection",
+        "user",
+    )
+    by_connection: dict[int, list[HarnessSignal]] = {}
     for signal in qs.iterator():
-        try:
-            evaluate_signal(signal)
-            count += 1
-        except Exception:
-            logger.exception("evaluate_signal failed ref_id=%s", signal.ref_id)
+        conn_id = signal.execution_account.broker_connection_id
+        by_connection.setdefault(conn_id, []).append(signal)
+
+    for conn_id, batch in by_connection.items():
+        if broker_paused(conn_id):
+            continue
+        for signal in batch:
+            clamp_account_caps(signal.execution_account)
+            try:
+                evaluate_signal(signal)
+                count += 1
+            except Exception as exc:
+                logger.exception(
+                    "evaluate_signal failed ref_id=%s user=%s",
+                    signal.ref_id,
+                    signal.user_id,
+                )
+                pause_broker(conn_id, exc)
     return count

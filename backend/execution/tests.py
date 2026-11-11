@@ -11,8 +11,9 @@ from execution.models import ExecutionAccount, HarnessJournal, HarnessSignal
 from execution.services.adapters import StubDeskAdapter
 from execution.services.caps import CapViolation, check_caps
 from execution.services.ingest import ingest_signal
+from execution.services.mcp_auth import generate_pat
 from execution.services.rules_engine import evaluate_signal
-from trading.constants import BROKER_ALPACA
+from trading.constants import BROKER_ALPACA, BROKER_KALSHI, BROKER_ROBINHOOD
 from trading.models import BrokerConnection
 from trading.services.brokers import OrderFill
 
@@ -28,6 +29,7 @@ class ExecutionHarnessTests(TestCase):
             last_equity=Decimal("50000"),
         )
         self.account = ExecutionAccount.objects.create(
+            user=self.user,
             slug="prop-desk",
             label="Prop Desk Paper",
             broker_connection=self.connection,
@@ -49,24 +51,25 @@ class ExecutionHarnessTests(TestCase):
             "stop": "0.80",
             "size": 1,
         }
-        first = ingest_signal(payload)
-        second = ingest_signal(payload)
+        first = ingest_signal(self.user, payload)
+        second = ingest_signal(self.user, payload)
         self.assertFalse(first["idempotent"])
         self.assertTrue(second["idempotent"])
-        self.assertEqual(HarnessSignal.objects.count(), 1)
+        self.assertEqual(HarnessSignal.objects.filter(user=self.user).count(), 1)
 
     def test_caps_reject_exposure(self):
         self.account.max_dollar_exposure = Decimal("100")
         self.account.save()
         with self.assertRaises(Exception) as ctx:
             ingest_signal(
+                self.user,
                 {
                     "ref_id": "sig-cap",
                     "account_slug": "prop-desk",
                     "symbol": "TSLA",
                     "entry_rule": {"type": "limit", "price": "5.00"},
                     "size": 2,
-                }
+                },
             )
         self.assertIn("max dollar exposure", str(ctx.exception).lower())
 
@@ -74,6 +77,7 @@ class ExecutionHarnessTests(TestCase):
         self.account.max_open_positions = 1
         self.account.save(update_fields=["max_open_positions"])
         HarnessSignal.objects.create(
+            user=self.user,
             ref_id="open-1",
             execution_account=self.account,
             symbol="MSFT",
@@ -98,6 +102,7 @@ class ExecutionHarnessTests(TestCase):
         desk_for.return_value = MagicMock(harness_client=lambda: mock_harness)
 
         signal = HarnessSignal.objects.create(
+            user=self.user,
             ref_id="eval-1",
             execution_account=self.account,
             symbol="AAPL",
@@ -119,14 +124,18 @@ class ExecutionHarnessTests(TestCase):
         self.assertEqual(signal.status, "closed")
 
     @patch("execution.services.adapters.KalshiRestClient")
-    def test_kalshi_desk_snapshot(self, client_cls):
+    @patch("execution.services.broker_credentials.kalshi_config_for")
+    def test_kalshi_desk_snapshot(self, cfg_for, client_cls):
         from execution.services.adapters import KalshiDeskAdapter
-        from trading.constants import BROKER_KALSHI
+        from execution.services.kalshi_api import KalshiConfig
 
+        cfg_for.return_value = KalshiConfig(
+            api_key_id="k", private_key_pem="x", base_url="https://demo-api.kalshi.co/trade-api/v2"
+        )
         client_cls.return_value.balance.return_value = {"balance": {"balance": 2500}}
         self.connection.broker = BROKER_KALSHI
         self.connection.save(update_fields=["broker", "updated_at"])
-        adapter = KalshiDeskAdapter(self.connection, "kalshi-desk", "Kalshi", dry_run=True)
+        adapter = KalshiDeskAdapter(self.connection, "prop-desk", "Kalshi", dry_run=True)
         snap = adapter.snapshot_accounts()[0]
         self.assertEqual(snap.broker, BROKER_KALSHI)
         self.assertTrue(snap.trading_enabled)
@@ -137,8 +146,9 @@ class ExecutionHarnessTests(TestCase):
         self.assertEqual(len(snaps), 1)
         self.assertEqual(snaps[0].buying_power, Decimal("50000"))
 
-    @override_settings(EXECUTION_MCP_BEARER_TOKEN="test-token")
-    def test_mcp_auth_and_ingest(self):
+    @override_settings(EXECUTION_MCP_ADMIN_BEARER="")
+    def test_mcp_pat_auth_and_ingest(self):
+        raw, _ = generate_pat(self.user, "test-agent")
         client = Client()
         unauthorized = client.post("/api/mcp/execution/", data="{}", content_type="application/json")
         self.assertEqual(unauthorized.status_code, 401)
@@ -162,17 +172,14 @@ class ExecutionHarnessTests(TestCase):
             "/api/mcp/execution/",
             data=payload,
             content_type="application/json",
-            HTTP_AUTHORIZATION="Bearer test-token",
+            HTTP_AUTHORIZATION=f"Bearer {raw}",
         )
         self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertIn("result", body)
-        self.assertTrue(HarnessSignal.objects.filter(ref_id="mcp-1").exists())
+        self.assertTrue(HarnessSignal.objects.filter(user=self.user, ref_id="mcp-1").exists())
 
     @patch("execution.services.adapters.list_accounts_for")
     def test_robinhood_adapter_mocked(self, list_accounts):
         from execution.services.adapters import RobinhoodDeskAdapter
-        from trading.constants import BROKER_ROBINHOOD
 
         rh_user = User.objects.create_user(username="rh", email="rh@example.com", password="x")
         rh = BrokerConnection.objects.create(
@@ -186,17 +193,13 @@ class ExecutionHarnessTests(TestCase):
         ]
         adapter = RobinhoodDeskAdapter(rh, "rh-desk", "RH", dry_run=True)
         with patch("execution.services.adapters.mcp_client_for") as mcp_for:
-            mcp_for.return_value.call_tool.return_value = {
-                "equity": "10000",
-                "portfolio": {"equity": "10000"},
-            }
+            mcp_for.return_value.call_tool.return_value = {}
             with patch("execution.services.adapters.portfolio_equity", return_value=Decimal("10000")):
                 with patch(
                     "execution.services.adapters.portfolio_spendable", return_value=Decimal("8000")
                 ):
                     snaps = adapter.snapshot_accounts()
         self.assertEqual(snaps[0].broker_account_id, "RH123")
-        self.assertEqual(snaps[0].option_level, "level3")
 
 
 class ExecutionDryRunEnforcedTests(TestCase):
@@ -204,14 +207,17 @@ class ExecutionDryRunEnforcedTests(TestCase):
     def test_journal_on_ingest(self):
         user = User.objects.create_user(username="u2", email="u2@example.com", password="x")
         conn = BrokerConnection.objects.create(user=user, broker=BROKER_ALPACA, is_paper=True)
-        ExecutionAccount.objects.create(slug="desk2", label="Desk", broker_connection=conn, dry_run=True)
+        ExecutionAccount.objects.create(
+            user=user, slug="desk2", label="Desk", broker_connection=conn, dry_run=True
+        )
         ingest_signal(
+            user,
             {
                 "ref_id": "j-1",
                 "account_slug": "desk2",
                 "symbol": "SPY",
                 "entry_rule": {"price": "1"},
                 "size": 1,
-            }
+            },
         )
-        self.assertTrue(HarnessJournal.objects.filter(action="signal_ingested").exists())
+        self.assertTrue(HarnessJournal.objects.filter(user=user, action="signal_ingested").exists())

@@ -1,45 +1,59 @@
-# Execution harness MCP (Prop Desk watcher)
+# Execution harness MCP (user-owned agents)
 
-Non-LLM rule loop for AI-harness signals: the harness **only ingests intent** via MCP; Celery evaluates entries/exits every minute with **no LLM calls**.
+Agentradez is **pure execution** for end users: your own AI agent (Grok, Claude, ChatGPT, Cursor, or any MCP client) sends **your** trade instructions; Agentradez watches the market and works **limit orders** and exits against **your connected brokerage**, within **caps you set**. Agentradez does **not** generate signals, recommend trades, select instruments, size positions, or give investment advice.
+
+The rule loop runs on Celery with **no LLM calls** — only your agent uses an LLM if you choose.
+
+## Product boundary
+
+| In scope (execution harness) | Out of scope |
+|------------------------------|--------------|
+| Ingest user/agent-supplied entry, stop, target, size, expiry | Strategy pickers, copy-trade, research signals, tier sizing |
+| Limit entries and rule-based exits (stop, target, time, expiry) | Agentradez-initiated trade ideas or recommendations |
+| Per-user caps, dry-run, journal of fills | Agentradez choosing position size or symbols |
+
+Existing Agentradez **strategies / copy-trade / research** remain separate product flows and are **not** exposed via this MCP.
 
 ## Endpoint
 
 | | |
 |---|---|
 | URL | `POST {PUBLIC_API_URL}/api/mcp/execution/` |
-| Auth | `Authorization: Bearer $EXECUTION_MCP_BEARER_TOKEN` |
+| Auth | Per-user **personal access token** or **OAuth access token** (create/revoke in the web app under Settings → AI agent access) |
+| Ops only | Optional `EXECUTION_MCP_ADMIN_BEARER` for platform staff (not end users) |
 | Protocol | JSON-RPC 2.0 (`initialize`, `tools/list`, `tools/call`) |
-
-Bearer token is required; if `EXECUTION_MCP_BEARER_TOKEN` is unset, all requests are rejected.
+| OAuth metadata | `GET /api/mcp/execution/.well-known/oauth-authorization-server` |
 
 ## Tools
 
 ### `list_accounts`
 
-Returns execution desk accounts linked to `BrokerConnection` rows (slug, broker, buying power, option level, `dry_run`).
+Your execution accounts (slug, broker, buying power, option level, `dry_run`). No cross-user data.
 
 ### `ingest_signal`
 
-Idempotent on `ref_id`. Required: `ref_id`, `account_slug`, `symbol`. Options fields: `option_type`, `strike`, `expiration`. Sizing: `size`. Risk: `stop`, `stop_loss_pct`, `targets[]`, `expiry`, `time_exit_at`.
+Idempotent on `ref_id` **per user**. You supply all trade fields; Agentradez only validates caps and places limit orders.
 
-### `set_levels`
+### `set_levels` / `cancel_signal` / `status`
 
-Update `stop` / `targets` / `entry_rule` / `time_exit_at` for an existing `ref_id` (also updates an open harness position).
+Update or cancel **your** instructions; read **your** positions and journal.
 
-### `cancel_signal`
+## Connect your agent (end user)
 
-Cancel a pending/working signal by `ref_id`.
+1. **Agentradez account** with trading access — connect brokers in Settings (Robinhood OAuth, Kalshi/Coinbase keys via API).
+2. Create an **execution account** — `POST /api/execution/accounts/` or auto-created when connecting Kalshi/Coinbase.
+3. Set **caps** and keep **dry-run on** until you trust the wiring — `PATCH /api/execution/accounts/{slug}/`.
+4. **Create MCP token** — Settings → “AI agent (MCP) access” or `POST /api/execution/agent-tokens/` (scopes: `execution:read`, `execution:trade`).
+5. Point your MCP client at `POST {API}/api/mcp/execution/` with `Authorization: Bearer agz_pat_...`.
 
-### `status`
+**OAuth (third-party agents):** register client `POST /api/execution/oauth/clients/`, user approves via `GET/POST /api/execution/oauth/authorize/` + `approve/`, exchange code at `POST /api/execution/oauth/token/` (PKCE).
 
-Snapshot of open signals, positions, working orders, last ticks, and recent journal actions (optional `account_slug` filter).
-
-## Sample signal payload
+## Sample instruction payload (from your agent)
 
 ```json
 {
-  "ref_id": "prop-desk-aapl-2026-04-04-001",
-  "account_slug": "prop-desk",
+  "ref_id": "my-agent-aapl-001",
+  "account_slug": "main",
   "market": "options",
   "symbol": "AAPL",
   "option_type": "call",
@@ -48,96 +62,45 @@ Snapshot of open signals, positions, working orders, last ticks, and recent jour
   "side": "buy",
   "entry_rule": { "type": "limit", "price": "1.35" },
   "stop": "0.90",
-  "targets": [
-    { "price": "2.00", "quantity": 1 },
-    { "price": "2.75", "pct_of_position": 50 }
-  ],
+  "targets": [{ "price": "2.00", "quantity": 1 }],
   "size": 2,
-  "expiry": "2026-04-04T21:00:00Z",
-  "notes": "Kalshi Book K follow-on"
+  "expiry": "2026-04-04T21:00:00Z"
 }
 ```
 
-## Environment variables
+## Environment variables (platform operators)
 
 | Variable | Purpose |
 |---|---|
-| `EXECUTION_MCP_BEARER_TOKEN` | MCP HTTP bearer auth (required in prod) |
-| `EXECUTION_DRY_RUN_DEFAULT` | Global dry-run latch (`true` default). Live orders need this `false` **and** `ExecutionAccount.dry_run=false` |
-| `EXECUTION_RULES_INTERVAL_SECONDS` | Celery beat interval for `execution.evaluate_harness_rules` (default `60`) |
+| `EXECUTION_DRY_RUN_DEFAULT` | Global dry-run latch (default `true`) |
+| `EXECUTION_RULES_INTERVAL_SECONDS` | Beat interval (default `60`) |
+| `EXECUTION_PLATFORM_MAX_*` | Platform ceilings on user caps |
+| `EXECUTION_MCP_ADMIN_BEARER` | Ops-only override (not for customers) |
 
-Robinhood live execution still uses existing OAuth secrets (`ROBINHOOD_CLIENT_ID`, tokens on `BrokerConnection`). Never log or return credentials from MCP tools.
+**Per-user broker secrets** live in `BrokerConnection.encrypted_credentials` (Kalshi/Coinbase keys from the app). Optional **dev fallback**: `KALSHI_*` and `COINBASE_ADVANCED_*` env vars on the server.
 
-## Setup
+## Robinhood production OAuth
 
-1. Create a `BrokerConnection` for the desk user (Alpaca stub or Robinhood OAuth).
-2. In Django admin, create an **Execution account** with slug (e.g. `prop-desk`), link the connection, set caps and `dry_run`.
-3. Ensure **celery-beat** runs `evaluate-harness-rules` (included in `config/celery.py`).
+Robinhood Agentic OAuth today only completes for **loopback** redirect URIs. For ordinary users without localhost paste:
 
-## Docker / Hetzner
+1. Register the production callback with Robinhood:  
+   `https://api.agentradez.com/api/broker-connections/robinhood/oauth/callback/`  
+   (or your `PUBLIC_API_URL` + that path).
+2. Set `ROBINHOOD_OAUTH_REDIRECT_URI` to that **HTTPS** URL and ensure `PUBLIC_API_URL` matches.
+3. If Robinhood’s app registration still rejects non-loopback redirects, Cuyler must open a Robinhood developer/support request to allow the production redirect for the Agentic Trading MCP client — until then, users complete OAuth on localhost and paste the callback URL into the app (existing flow).
 
-No new image: the harness rides in `agentradez-api` and `celery` / `celery-beat` services. Set env vars on those containers in `cuqulabs-core-services` compose.
+## Compliance notes (for operators — not legal advice)
+
+- Agentradez acts as a **technical execution layer** on **accounts the user connected**; instructions come from **the user’s agent**, not from Agentradez.
+- You are responsible for **disclosures**, **customer agreements**, and whether your service constitutes **investment advice**, **broker-dealer**, or **introducing broker** activity in your jurisdictions.
+- **Robinhood / Kalshi / Coinbase** terms may restrict automated or third-party trading; users connect **their own** API keys/OAuth; review each broker’s ToS and API policies.
+- **Dry-run defaults** and **user caps** reduce accidental live risk but do not replace regulatory compliance.
+- **No custody**: keys/tokens are stored encrypted for execution only; MCP tools do not return secrets.
 
 ## QA
 
 1. `python manage.py test execution`
-2. `curl -H "Authorization: Bearer $TOKEN" -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' $API/api/mcp/execution/`
-3. Ingest sample signal; confirm journal + beat opens position in dry-run
-4. Flip `dry_run` off only in a paper account after caps review
+2. PAT auth smoke on `/api/mcp/execution/`
+3. Tenant isolation: two users cannot read each other’s `status`
 
-## Kalshi & Coinbase
-
-Set broker env vars on API + Celery (see tables below). Link `BrokerConnection.broker` to `kalshi` or `coinbase` and use harness `market` `kalshi` / `coinbase`.
-
-### Sample Kalshi signal
-
-```json
-{
-  "ref_id": "kalshi-book-k-001",
-  "account_slug": "prop-kalshi",
-  "market": "kalshi",
-  "symbol": "KXHIGHNY-25NOV11-T72",
-  "side": "buy",
-  "entry_rule": { "type": "limit", "price": "0.42", "kalshi_side": "yes" },
-  "stop": "0.30",
-  "size": 10,
-  "expiry": "2026-04-04T21:00:00Z"
-}
-```
-
-### Sample Coinbase spot signal
-
-```json
-{
-  "ref_id": "cb-btc-001",
-  "account_slug": "prop-coinbase",
-  "market": "coinbase",
-  "symbol": "BTC-USD",
-  "side": "buy",
-  "entry_rule": { "type": "limit", "price": "95000.00" },
-  "stop": "92000.00",
-  "size": 1,
-  "expiry": "2026-04-04T21:00:00Z"
-}
-```
-
-### Kalshi env vars
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `KALSHI_API_KEY_ID` | Yes | Kalshi API key id |
-| `KALSHI_PRIVATE_KEY_PEM` | Yes* | RSA private key PEM |
-| `KALSHI_PRIVATE_KEY_FILE` | Yes* | Path to PEM in container |
-| `KALSHI_API_BASE_URL` | No | Overrides demo/prod base |
-| `KALSHI_USE_DEMO` | No | Default `true` (demo host) |
-
-### Coinbase Advanced Trade env vars
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `COINBASE_ADVANCED_API_KEY_NAME` | Yes | `organizations/.../apiKeys/...` |
-| `COINBASE_ADVANCED_API_PRIVATE_KEY_PEM` | Yes* | ES256 EC private key |
-| `COINBASE_ADVANCED_API_PRIVATE_KEY_FILE` | Yes* | Path to key file |
-| `COINBASE_ADVANCED_API_BASE_URL` | No | Default `https://api.coinbase.com` |
-
-\* Provide PEM **or** file path, not both required.
+See [agent_artifacts/execution_multitenant_qa.md](../../agent_artifacts/execution_multitenant_qa.md).

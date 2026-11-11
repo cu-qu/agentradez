@@ -3,6 +3,8 @@ from django.utils.text import slugify
 from rest_framework import serializers
 
 from trading.constants import (
+    BROKER_COINBASE,
+    BROKER_KALSHI,
     BROKER_CHOICES,
     COPY_TRADE_SIGNAL_SOURCE_CATALOG,
     COPY_TRADE_SIGNAL_SOURCE_CHOICES,
@@ -684,11 +686,20 @@ class BrokerConnectSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {"api_key": "Alpaca requires api_key and api_secret."}
             )
+        if broker in (BROKER_KALSHI, BROKER_COINBASE):
+            raise serializers.ValidationError(
+                {
+                    "broker": (
+                        "Use POST /api/execution/connect/kalshi/ or "
+                        "/api/execution/connect/coinbase/ for harness brokers."
+                    )
+                }
+            )
         return attrs
 
     def create(self, validated_data):
         user = self.context["request"].user
-        disconnect_user_brokers(user)
+        disconnect_user_brokers(user, validated_data["broker"])
         secrets = {
             "api_key": validated_data.pop("api_key", ""),
             "api_secret": validated_data.pop("api_secret", ""),
@@ -707,8 +718,11 @@ class BrokerConnectSerializer(serializers.Serializer):
         return connection
 
 
-def disconnect_user_brokers(user) -> None:
-    for existing in BrokerConnection.objects.filter(user=user):
+def disconnect_user_brokers(user, broker: str | None = None) -> None:
+    qs = BrokerConnection.objects.filter(user=user)
+    if broker:
+        qs = qs.filter(broker=broker)
+    for existing in qs:
         existing.soft_delete()
         existing.status = BrokerConnection.Status.DISCONNECTED
         existing.save(update_fields=["status", "updated_at"])

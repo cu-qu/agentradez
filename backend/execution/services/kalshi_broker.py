@@ -20,9 +20,11 @@ from trading.services.brokers import BrokerError, OrderFill
 
 
 class KalshiHarnessClient(HarnessBrokerClient):
-    def __init__(self, client: KalshiRestClient | None = None):
+    def __init__(self, connection, client: KalshiRestClient | None = None):
+        from execution.services.broker_credentials import kalshi_config_for
+
         try:
-            self._client = client or KalshiRestClient()
+            self._client = client or KalshiRestClient(kalshi_config_for(connection))
         except KalshiApiError as exc:
             raise BrokerError(str(exc)) from exc
 

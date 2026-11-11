@@ -74,8 +74,9 @@ class KalshiApiTests(SimpleTestCase):
             "order": {"order_id": "o1", "status": "executed", "fill_count": "1", "yes_price": 40}
         }
         mock.market.return_value = {"market": {"yes_bid": 39, "yes_ask": 41}}
-        client_cls.return_value = mock
-        broker = KalshiHarnessClient()
+        conn = MagicMock()
+        conn.encrypted_credentials = ""
+        broker = KalshiHarnessClient(connection=conn, client=mock)
         signal = HarnessSignal(
             symbol="TICKER",
             side="buy",
@@ -110,7 +111,7 @@ class CoinbaseHarnessMockTests(SimpleTestCase):
             "success_response": {"order_id": "cb-1", "status": "OPEN"}
         }
         client_cls.return_value = mock
-        broker = CoinbaseHarnessClient()
+        broker = CoinbaseHarnessClient(connection=MagicMock(encrypted_credentials=""), client=mock)
         signal = HarnessSignal(symbol="BTC-USD", side="buy", quantity=1, market="coinbase")
         quote = broker.get_quote(signal)
         self.assertEqual(quote.mark, Decimal("100.50"))
@@ -123,6 +124,6 @@ class CoinbaseHarnessMockTests(SimpleTestCase):
     def test_cancel_batch(self, client_cls):
         mock = MagicMock()
         client_cls.return_value = mock
-        broker = CoinbaseHarnessClient()
+        broker = CoinbaseHarnessClient(connection=MagicMock(encrypted_credentials=""), client=mock)
         broker.cancel_order("order-uuid")
         mock.cancel_orders.assert_called_once_with(["order-uuid"])

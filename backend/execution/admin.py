@@ -1,11 +1,20 @@
 from django.contrib import admin
 
-from .models import ExecutionAccount, HarnessJournal, HarnessOrder, HarnessPosition, HarnessSignal
+from .models import (
+    ExecutionAccount,
+    ExecutionAgentToken,
+    ExecutionMcpAccessGrant,
+    ExecutionOAuthClient,
+    HarnessJournal,
+    HarnessOrder,
+    HarnessPosition,
+    HarnessSignal,
+)
 
 
 @admin.register(ExecutionAccount)
 class ExecutionAccountAdmin(admin.ModelAdmin):
-    list_display = ("slug", "label", "broker_connection", "dry_run", "is_enabled")
+    list_display = ("user", "slug", "label", "broker_connection", "dry_run", "is_enabled")
     list_filter = ("dry_run", "is_enabled")
 
 
@@ -28,5 +37,20 @@ class HarnessOrderAdmin(admin.ModelAdmin):
 
 @admin.register(HarnessJournal)
 class HarnessJournalAdmin(admin.ModelAdmin):
-    list_display = ("action", "execution_account", "signal", "created_at")
+    list_display = ("action", "user", "execution_account", "signal", "created_at")
     list_filter = ("action",)
+
+
+@admin.register(ExecutionAgentToken)
+class ExecutionAgentTokenAdmin(admin.ModelAdmin):
+    list_display = ("user", "label", "token_prefix", "last_used_at", "revoked_at")
+
+
+@admin.register(ExecutionOAuthClient)
+class ExecutionOAuthClientAdmin(admin.ModelAdmin):
+    list_display = ("user", "name", "client_id", "created_at")
+
+
+@admin.register(ExecutionMcpAccessGrant)
+class ExecutionMcpAccessGrantAdmin(admin.ModelAdmin):
+    list_display = ("user", "client", "expires_at", "last_used_at", "revoked_at")

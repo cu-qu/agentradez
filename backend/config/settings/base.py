@@ -320,6 +320,8 @@ ROBINHOOD_CLIENT_ID = os.environ.get("ROBINHOOD_CLIENT_ID", "").strip()
 ROBINHOOD_OAUTH_REDIRECT_URI = os.environ.get("ROBINHOOD_OAUTH_REDIRECT_URI", "").strip()
 
 # Execution harness (Prop Desk MCP watcher — no LLM in the rule loop)
+EXECUTION_MCP_ADMIN_BEARER = os.environ.get("EXECUTION_MCP_ADMIN_BEARER", "").strip()
+# Deprecated: use per-user agent tokens. Optional ops-only override.
 EXECUTION_MCP_BEARER_TOKEN = os.environ.get("EXECUTION_MCP_BEARER_TOKEN", "").strip()
 EXECUTION_DRY_RUN_DEFAULT = os.environ.get("EXECUTION_DRY_RUN_DEFAULT", "true").lower() in (
     "1",
@@ -328,6 +330,11 @@ EXECUTION_DRY_RUN_DEFAULT = os.environ.get("EXECUTION_DRY_RUN_DEFAULT", "true").
     "on",
 )
 EXECUTION_RULES_INTERVAL_SECONDS = float(os.environ.get("EXECUTION_RULES_INTERVAL_SECONDS", "60"))
+EXECUTION_PLATFORM_MAX_OPEN_POSITIONS = int(os.environ.get("EXECUTION_PLATFORM_MAX_OPEN_POSITIONS", "20"))
+EXECUTION_PLATFORM_MAX_DOLLAR_EXPOSURE = os.environ.get("EXECUTION_PLATFORM_MAX_DOLLAR_EXPOSURE", "100000")
+EXECUTION_PLATFORM_MAX_LOSS_PER_POSITION_USD = os.environ.get(
+    "EXECUTION_PLATFORM_MAX_LOSS_PER_POSITION_USD", "2500"
+)
 
 # Kalshi trade-api v2 (RSA-PSS). Secrets from env only — never logged or returned by MCP tools.
 KALSHI_API_KEY_ID = os.environ.get("KALSHI_API_KEY_ID", "").strip()
