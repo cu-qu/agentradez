@@ -140,7 +140,9 @@ class StubDeskAdapter(DeskBrokerAdapter):
 class KalshiDeskAdapter(DeskBrokerAdapter):
     def snapshot_accounts(self) -> list[DeskAccountSnapshot]:
         try:
-            client = KalshiRestClient()
+            from execution.services.broker_credentials import kalshi_config_for
+
+            client = KalshiRestClient(kalshi_config_for(self.connection))
             balance = client.balance()
             buying_power = balance_buying_power_usd(balance)
         except KalshiApiError:
@@ -164,7 +166,9 @@ class KalshiDeskAdapter(DeskBrokerAdapter):
 class CoinbaseDeskAdapter(DeskBrokerAdapter):
     def snapshot_accounts(self) -> list[DeskAccountSnapshot]:
         try:
-            client = CoinbaseAdvancedClient()
+            from execution.services.broker_credentials import coinbase_config_for
+
+            client = CoinbaseAdvancedClient(coinbase_config_for(self.connection))
             payload = client.list_accounts()
             equity, buying_power = accounts_buying_power(payload)
         except CoinbaseApiError:

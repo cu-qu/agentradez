@@ -1,4 +1,4 @@
-"""Idempotent signal ingest and level updates."""
+"""Idempotent signal ingest and level updates (tenant-scoped)."""
 
 from __future__ import annotations
 
@@ -9,14 +9,12 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-from execution.constants import (
-    MARKET_OPTIONS,
-    SIGNAL_CANCELLED,
-    SIGNAL_PENDING,
-)
+from accounts.models import User
+from execution.constants import MARKET_OPTIONS, SIGNAL_CANCELLED, SIGNAL_PENDING
 from execution.models import ExecutionAccount, HarnessPosition, HarnessSignal
 from execution.services.caps import CapViolation, check_caps, check_stop_within_max_loss
 from execution.services.journal import journal
+from execution.services.platform_caps import clamp_account_caps
 
 
 class IngestError(Exception):
@@ -49,34 +47,47 @@ def _parse_dt(value) -> datetime | None:
     return parsed
 
 
-def _resolve_account(account_slug: str | None, account_id: int | None) -> ExecutionAccount:
+def _resolve_account(
+    user: User,
+    account_slug: str | None,
+    account_id: int | None,
+) -> ExecutionAccount:
     if account_slug:
         try:
             return ExecutionAccount.objects.select_related("broker_connection").get(
-                slug=account_slug, is_enabled=True
+                user=user,
+                slug=account_slug,
+                is_enabled=True,
             )
         except ExecutionAccount.DoesNotExist as exc:
             raise IngestError("unknown_account", f"Unknown execution account: {account_slug}") from exc
     if account_id:
         try:
             return ExecutionAccount.objects.select_related("broker_connection").get(
-                pk=account_id, is_enabled=True
+                user=user,
+                pk=account_id,
+                is_enabled=True,
             )
         except ExecutionAccount.DoesNotExist as exc:
             raise IngestError("unknown_account", f"Unknown execution account id: {account_id}") from exc
     raise IngestError("account_required", "Provide account_slug or account_id.")
 
 
-def ingest_signal(payload: dict) -> dict:
+def ingest_signal(user: User, payload: dict) -> dict:
     ref_id = (payload.get("ref_id") or "").strip()
     if not ref_id:
         raise IngestError("ref_id_required", "ref_id is required.")
 
-    existing = HarnessSignal.objects.filter(ref_id=ref_id).first()
+    existing = HarnessSignal.objects.filter(user=user, ref_id=ref_id).first()
     if existing:
         return {"ref_id": ref_id, "signal_id": existing.pk, "status": existing.status, "idempotent": True}
 
-    account = _resolve_account(payload.get("account_slug"), payload.get("account_id"))
+    account = clamp_account_caps(
+        _resolve_account(user, payload.get("account_slug"), payload.get("account_id"))
+    )
+    if account.broker_connection.user_id != user.id:
+        raise IngestError("forbidden", "Broker connection does not belong to this user.")
+
     market = (payload.get("market") or MARKET_OPTIONS).lower()
     symbol = (payload.get("symbol") or payload.get("ticker") or "").upper().strip()
     if not symbol:
@@ -118,6 +129,7 @@ def ingest_signal(payload: dict) -> dict:
 
     with transaction.atomic():
         signal = HarnessSignal.objects.create(
+            user=user,
             ref_id=ref_id,
             execution_account=account,
             market=market,
@@ -138,6 +150,7 @@ def ingest_signal(payload: dict) -> dict:
         )
         journal(
             "signal_ingested",
+            user=user,
             execution_account=account,
             signal=signal,
             detail={"ref_id": ref_id, "dry_run": account.dry_run},
@@ -152,13 +165,18 @@ def ingest_signal(payload: dict) -> dict:
     }
 
 
-def set_levels(payload: dict) -> dict:
+def _signal_for_user(user: User, ref_id: str) -> HarnessSignal:
+    signal = HarnessSignal.objects.filter(user=user, ref_id=ref_id).first()
+    if signal is None:
+        raise IngestError("not_found", f"No signal for ref_id={ref_id}")
+    return signal
+
+
+def set_levels(user: User, payload: dict) -> dict:
     ref_id = (payload.get("ref_id") or "").strip()
     if not ref_id:
         raise IngestError("ref_id_required", "ref_id is required.")
-    signal = HarnessSignal.objects.filter(ref_id=ref_id).first()
-    if signal is None:
-        raise IngestError("not_found", f"No signal for ref_id={ref_id}")
+    signal = _signal_for_user(user, ref_id)
 
     updated: list[str] = []
     if "stop" in payload or "stop_price" in payload:
@@ -177,7 +195,7 @@ def set_levels(payload: dict) -> dict:
     if updated:
         signal.save(update_fields=updated + ["updated_at"])
 
-    position = HarnessPosition.objects.filter(signal=signal).first()
+    position = HarnessPosition.objects.filter(signal=signal, user=user).first()
     if position:
         pos_fields: list[str] = []
         if "stop" in payload or "stop_price" in payload:
@@ -191,6 +209,7 @@ def set_levels(payload: dict) -> dict:
 
     journal(
         "levels_updated",
+        user=user,
         execution_account=signal.execution_account,
         signal=signal,
         detail={"fields": updated},
@@ -198,19 +217,18 @@ def set_levels(payload: dict) -> dict:
     return {"ref_id": ref_id, "updated": updated, "status": signal.status}
 
 
-def cancel_signal(payload: dict) -> dict:
+def cancel_signal(user: User, payload: dict) -> dict:
     ref_id = (payload.get("ref_id") or "").strip()
     if not ref_id:
         raise IngestError("ref_id_required", "ref_id is required.")
-    signal = HarnessSignal.objects.filter(ref_id=ref_id).first()
-    if signal is None:
-        raise IngestError("not_found", f"No signal for ref_id={ref_id}")
+    signal = _signal_for_user(user, ref_id)
     if signal.status in (SIGNAL_CANCELLED,):
         return {"ref_id": ref_id, "status": signal.status, "idempotent": True}
     signal.status = SIGNAL_CANCELLED
     signal.save(update_fields=["status", "updated_at"])
     journal(
         "signal_cancelled",
+        user=user,
         execution_account=signal.execution_account,
         signal=signal,
         detail={"reason": payload.get("reason", "")},

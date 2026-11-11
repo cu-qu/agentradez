@@ -14,6 +14,7 @@ import {
 import { useAuth } from "@/lib/auth/provider";
 import { useHideAmounts } from "@/lib/privacy";
 import { AccountsPanel } from "@/components/accounts";
+import { ExecutionAgentsPanel } from "@/components/execution-agents";
 import { AppShell } from "@/components/app-shell";
 import { RequireAuth } from "@/components/gates";
 import { Banner, Button, Card, Select, Spinner, Switch, VisibilityBadge } from "@/components/ui";
@@ -240,6 +241,7 @@ function Settings() {
       </section>
 
       <AccountsPanel />
+      <ExecutionAgentsPanel />
     </div>
   );
 }

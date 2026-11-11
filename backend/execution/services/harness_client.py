@@ -94,9 +94,9 @@ def harness_client_for(connection: BrokerConnection) -> HarnessBrokerClient:
 
     broker = connection.broker
     if broker == BROKER_KALSHI:
-        return KalshiHarnessClient()
+        return KalshiHarnessClient(connection)
     if broker == BROKER_COINBASE:
-        return CoinbaseHarnessClient()
+        return CoinbaseHarnessClient(connection)
     if broker in (BROKER_ROBINHOOD, BROKER_ALPACA):
         return OptionsHarnessClient(connection)
     return OptionsHarnessClient(connection)

@@ -1,7 +1,8 @@
+from accounts.models import User
 from django.utils import timezone
 
 from execution.constants import ORDER_WORKING, POSITION_OPEN, SIGNAL_OPEN, SIGNAL_PENDING, SIGNAL_WORKING_ENTRY
-from execution.models import ExecutionAccount, HarnessOrder, HarnessPosition, HarnessSignal
+from execution.models import ExecutionAccount, HarnessOrder, HarnessJournal, HarnessPosition, HarnessSignal
 from execution.services.adapters import desk_adapter_for
 
 
@@ -21,44 +22,39 @@ def _serialize_signal(signal: HarnessSignal) -> dict:
     }
 
 
-def status_payload(account_slug: str | None = None) -> dict:
-    accounts_qs = ExecutionAccount.objects.filter(is_enabled=True).select_related("broker_connection")
-    if account_slug:
-        accounts_qs = accounts_qs.filter(slug=account_slug)
-
+def status_payload(user: User, account_slug: str | None = None) -> dict:
     signals = HarnessSignal.objects.filter(
-        status__in=(SIGNAL_PENDING, SIGNAL_WORKING_ENTRY, SIGNAL_OPEN)
+        user=user,
+        status__in=(SIGNAL_PENDING, SIGNAL_WORKING_ENTRY, SIGNAL_OPEN),
     )
     if account_slug:
         signals = signals.filter(execution_account__slug=account_slug)
 
-    positions = HarnessPosition.objects.filter(status=POSITION_OPEN)
+    positions = HarnessPosition.objects.filter(user=user, status=POSITION_OPEN)
     if account_slug:
         positions = positions.filter(execution_account__slug=account_slug)
 
-    working_orders = HarnessOrder.objects.filter(status=ORDER_WORKING)
+    working_orders = HarnessOrder.objects.filter(status=ORDER_WORKING, signal__user=user)
     if account_slug:
         working_orders = working_orders.filter(signal__execution_account__slug=account_slug)
 
-    recent_journal = []
-    from execution.models import HarnessJournal
-
-    journal_qs = HarnessJournal.objects.select_related("signal")[:30]
+    journal_qs = HarnessJournal.objects.filter(user=user).select_related("signal")[:30]
     if account_slug:
         journal_qs = journal_qs.filter(execution_account__slug=account_slug)
-    for row in journal_qs:
-        recent_journal.append(
-            {
-                "action": row.action,
-                "ref_id": row.signal.ref_id if row.signal_id else None,
-                "detail": row.detail,
-                "at": row.created_at.isoformat(),
-            }
-        )
+
+    recent_journal = [
+        {
+            "action": row.action,
+            "ref_id": row.signal.ref_id if row.signal_id else None,
+            "detail": row.detail,
+            "at": row.created_at.isoformat(),
+        }
+        for row in journal_qs
+    ]
 
     return {
         "as_of": timezone.now().isoformat(),
-        "open_signals": [_serialize_signal(s) for s in signals[:100]],
+        "open_signals": [_serialize_signal(s) for s in signals.select_related("execution_account")[:100]],
         "open_positions": [
             {
                 "ref_id": p.signal.ref_id,
@@ -86,9 +82,11 @@ def status_payload(account_slug: str | None = None) -> dict:
     }
 
 
-def list_accounts_payload() -> dict:
+def list_accounts_payload(user: User) -> dict:
     rows = []
-    for account in ExecutionAccount.objects.filter(is_enabled=True).select_related("broker_connection"):
+    for account in ExecutionAccount.objects.filter(user=user, is_enabled=True).select_related(
+        "broker_connection"
+    ):
         adapter = desk_adapter_for(account)
         for snap in adapter.snapshot_accounts():
             rows.append(

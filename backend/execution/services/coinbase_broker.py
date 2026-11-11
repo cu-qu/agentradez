@@ -17,9 +17,11 @@ from trading.services.brokers import BrokerError, OrderFill
 
 
 class CoinbaseHarnessClient(HarnessBrokerClient):
-    def __init__(self, client: CoinbaseAdvancedClient | None = None):
+    def __init__(self, connection, client: CoinbaseAdvancedClient | None = None):
+        from execution.services.broker_credentials import coinbase_config_for
+
         try:
-            self._client = client or CoinbaseAdvancedClient()
+            self._client = client or CoinbaseAdvancedClient(coinbase_config_for(connection))
         except CoinbaseApiError as exc:
             raise BrokerError(str(exc)) from exc
 
