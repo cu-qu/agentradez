@@ -329,6 +329,21 @@ EXECUTION_DRY_RUN_DEFAULT = os.environ.get("EXECUTION_DRY_RUN_DEFAULT", "true").
 )
 EXECUTION_RULES_INTERVAL_SECONDS = float(os.environ.get("EXECUTION_RULES_INTERVAL_SECONDS", "60"))
 
+# Kalshi trade-api v2 (RSA-PSS). Secrets from env only — never logged or returned by MCP tools.
+KALSHI_API_KEY_ID = os.environ.get("KALSHI_API_KEY_ID", "").strip()
+KALSHI_PRIVATE_KEY_PEM = os.environ.get("KALSHI_PRIVATE_KEY_PEM", "").strip()
+KALSHI_PRIVATE_KEY_FILE = os.environ.get("KALSHI_PRIVATE_KEY_FILE", "").strip()
+KALSHI_API_BASE_URL = os.environ.get("KALSHI_API_BASE_URL", "").strip()
+KALSHI_USE_DEMO = os.environ.get("KALSHI_USE_DEMO", "true").lower() in ("1", "true", "yes", "on")
+
+# Coinbase Advanced Trade spot (CDP ES256 JWT per request).
+COINBASE_ADVANCED_API_KEY_NAME = os.environ.get("COINBASE_ADVANCED_API_KEY_NAME", "").strip()
+COINBASE_ADVANCED_API_PRIVATE_KEY_PEM = os.environ.get("COINBASE_ADVANCED_API_PRIVATE_KEY_PEM", "").strip()
+COINBASE_ADVANCED_API_PRIVATE_KEY_FILE = os.environ.get("COINBASE_ADVANCED_API_PRIVATE_KEY_FILE", "").strip()
+COINBASE_ADVANCED_API_BASE_URL = os.environ.get(
+    "COINBASE_ADVANCED_API_BASE_URL", "https://api.coinbase.com"
+).strip()
+
 _resend_key = os.environ.get("RESEND_API_KEY", "").strip()
 if os.environ.get("EMAIL_BACKEND", "").strip():
     EMAIL_BACKEND = os.environ["EMAIL_BACKEND"].strip()

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from execution.constants import POSITION_OPEN, SIGNAL_OPEN, SIGNAL_WORKING_ENTRY
+from execution.constants import MARKET_OPTIONS, POSITION_OPEN, SIGNAL_OPEN, SIGNAL_WORKING_ENTRY
 from execution.models import ExecutionAccount, HarnessPosition, HarnessSignal
-from trading.constants import CONTRACT_MULTIPLIER
+from execution.services.harness_client import market_multiplier
 
 
 class CapViolation(Exception):
@@ -32,21 +32,24 @@ def _exposure_usd(account: ExecutionAccount) -> Decimal:
     total = Decimal("0")
     for pos in HarnessPosition.objects.filter(
         execution_account=account, status=POSITION_OPEN
-    ):
+    ).select_related("signal"):
         mark = pos.current_price or pos.average_entry_price
-        total += mark * CONTRACT_MULTIPLIER * Decimal(pos.remaining_quantity)
+        mult = market_multiplier(pos.signal.market)
+        total += mark * mult * Decimal(pos.remaining_quantity)
     for sig in HarnessSignal.objects.filter(
         execution_account=account, status=SIGNAL_WORKING_ENTRY
     ):
         price = sig.entry_rule.get("price") if isinstance(sig.entry_rule, dict) else None
         if price is not None:
-            total += Decimal(str(price)) * CONTRACT_MULTIPLIER * Decimal(sig.quantity)
+            mult = market_multiplier(sig.market)
+            total += Decimal(str(price)) * mult * Decimal(sig.quantity)
     return total
 
 
 def check_caps(
     account: ExecutionAccount,
     *,
+    market: str = MARKET_OPTIONS,
     additional_contracts: int = 0,
     entry_limit_price: Decimal | None = None,
     quantity: int = 1,
@@ -58,9 +61,10 @@ def check_caps(
             f"Would exceed max open positions ({account.max_open_positions}).",
         )
 
+    mult = market_multiplier(market)
     exposure = _exposure_usd(account)
     if entry_limit_price is not None:
-        exposure += entry_limit_price * CONTRACT_MULTIPLIER * Decimal(quantity)
+        exposure += entry_limit_price * mult * Decimal(quantity)
     if exposure > account.max_dollar_exposure:
         raise CapViolation(
             "max_dollar_exposure",
@@ -69,11 +73,17 @@ def check_caps(
 
 
 def max_loss_for_position(
-    account: ExecutionAccount, entry_price: Decimal, stop_price: Decimal | None, quantity: int
+    account: ExecutionAccount,
+    entry_price: Decimal,
+    stop_price: Decimal | None,
+    quantity: int,
+    *,
+    market: str = MARKET_OPTIONS,
 ) -> Decimal | None:
     if stop_price is None:
         return None
-    loss = (entry_price - stop_price) * CONTRACT_MULTIPLIER * Decimal(quantity)
+    mult = market_multiplier(market)
+    loss = (entry_price - stop_price) * mult * Decimal(quantity)
     if loss < 0:
         loss = -loss
     return loss
@@ -84,8 +94,10 @@ def check_stop_within_max_loss(
     entry_price: Decimal,
     stop_price: Decimal | None,
     quantity: int,
+    *,
+    market: str = MARKET_OPTIONS,
 ) -> None:
-    loss = max_loss_for_position(account, entry_price, stop_price, quantity)
+    loss = max_loss_for_position(account, entry_price, stop_price, quantity, market=market)
     if loss is not None and loss > account.max_loss_per_position_usd:
         raise CapViolation(
             "max_loss_per_position",
