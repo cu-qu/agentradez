@@ -6,8 +6,10 @@ from django.test import Client, TestCase, override_settings
 from django.utils import timezone
 
 from accounts.models import User
-from execution.constants import POSITION_OPEN, SIGNAL_OPEN, SIGNAL_PENDING
-from execution.models import ExecutionAccount, HarnessJournal, HarnessSignal
+from execution.constants import ORDER_EXIT, ORDER_WORKING, POSITION_OPEN, SIGNAL_OPEN, SIGNAL_PENDING
+from execution.models import ExecutionAccount, HarnessJournal, HarnessOrder, HarnessPosition, HarnessSignal
+from execution.services.ingest import cancel_signal
+from execution.services.rules_engine import evaluate_all_signals
 from execution.services.adapters import CoinbaseDeskAdapter, KalshiDeskAdapter, StubDeskAdapter
 from execution.services.caps import CapViolation, check_caps
 from execution.services.ingest import ingest_signal
@@ -188,6 +190,166 @@ class ExecutionHarnessTests(TestCase):
                     snaps = adapter.snapshot_accounts()
         self.assertEqual(snaps[0].broker_account_id, "RH123")
         self.assertEqual(snaps[0].option_level, "level3")
+
+    @patch("execution.services.rules_engine.desk_adapter_for")
+    def test_rules_engine_time_exit(self, desk_for):
+        mock_client = MagicMock()
+        mock_client.get_option_market.return_value = OptionQuote(mark=Decimal("1.50"))
+        desk_for.return_value = MagicMock(client=lambda: mock_client)
+
+        past = timezone.now() - timedelta(minutes=5)
+        signal = HarnessSignal.objects.create(
+            ref_id="time-exit-1",
+            execution_account=self.account,
+            symbol="AAPL",
+            option_type="call",
+            strike=Decimal("200"),
+            expiration=date.today() + timedelta(days=30),
+            quantity=1,
+            status=SIGNAL_OPEN,
+            time_exit_at=past,
+        )
+        HarnessPosition.objects.create(
+            signal=signal,
+            execution_account=self.account,
+            quantity=1,
+            remaining_quantity=1,
+            average_entry_price=Decimal("1.20"),
+            status=POSITION_OPEN,
+            opened_at=timezone.now(),
+        )
+        evaluate_signal(signal)
+        signal.refresh_from_db()
+        self.assertEqual(signal.status, "closed")
+
+    @patch("execution.services.rules_engine.desk_adapter_for")
+    def test_rules_engine_take_profit_target(self, desk_for):
+        mock_client = MagicMock()
+        mock_client.get_option_market.return_value = OptionQuote(mark=Decimal("3.00"))
+        desk_for.return_value = MagicMock(client=lambda: mock_client)
+
+        signal = HarnessSignal.objects.create(
+            ref_id="target-1",
+            execution_account=self.account,
+            symbol="AAPL",
+            option_type="call",
+            strike=Decimal("200"),
+            expiration=date.today() + timedelta(days=30),
+            quantity=2,
+            targets=[{"price": "2.50", "quantity": 1}],
+            status=SIGNAL_OPEN,
+        )
+        HarnessPosition.objects.create(
+            signal=signal,
+            execution_account=self.account,
+            quantity=2,
+            remaining_quantity=2,
+            average_entry_price=Decimal("1.20"),
+            targets=[{"price": "2.50", "quantity": 1}],
+            status=POSITION_OPEN,
+            opened_at=timezone.now(),
+        )
+        evaluate_signal(signal)
+        signal.refresh_from_db()
+        self.assertEqual(signal.status, SIGNAL_OPEN)
+        signal.position.refresh_from_db()
+        self.assertEqual(signal.position.remaining_quantity, 1)
+
+    @override_settings(EXECUTION_DRY_RUN_DEFAULT=False)
+    @patch("execution.services.rules_engine.desk_adapter_for")
+    def test_no_duplicate_working_exit_orders(self, desk_for):
+        self.account.dry_run = False
+        self.account.save(update_fields=["dry_run"])
+        mock_client = MagicMock()
+        mock_client.get_option_market.return_value = OptionQuote(mark=Decimal("0.40"))
+        mock_client.sell_to_close.return_value = OrderFill("live-exit", "open", 0, Decimal("0.40"))
+        desk_for.return_value = MagicMock(client=lambda: mock_client)
+
+        signal = HarnessSignal.objects.create(
+            ref_id="dup-exit-1",
+            execution_account=self.account,
+            symbol="AAPL",
+            option_type="call",
+            strike=Decimal("200"),
+            expiration=date.today() + timedelta(days=30),
+            quantity=1,
+            stop_price=Decimal("0.50"),
+            status=SIGNAL_OPEN,
+        )
+        HarnessPosition.objects.create(
+            signal=signal,
+            execution_account=self.account,
+            quantity=1,
+            remaining_quantity=1,
+            average_entry_price=Decimal("1.20"),
+            stop_price=Decimal("0.50"),
+            status=POSITION_OPEN,
+            opened_at=timezone.now(),
+        )
+        evaluate_signal(signal)
+        evaluate_signal(signal)
+        exit_orders = HarnessOrder.objects.filter(signal=signal, purpose=ORDER_EXIT, status=ORDER_WORKING)
+        self.assertEqual(exit_orders.count(), 1)
+
+    def test_cancel_signal_idempotent(self):
+        ingest_signal(
+            {
+                "ref_id": "cancel-1",
+                "account_slug": "prop-desk",
+                "symbol": "SPY",
+                "entry_rule": {"price": "1"},
+                "size": 1,
+            }
+        )
+        first = cancel_signal({"ref_id": "cancel-1"})
+        second = cancel_signal({"ref_id": "cancel-1"})
+        self.assertFalse(first["idempotent"])
+        self.assertTrue(second["idempotent"])
+
+    @override_settings(EXECUTION_MCP_BEARER_TOKEN="test-token")
+    @patch("execution.services.rules_engine.desk_adapter_for")
+    def test_mcp_e2e_dry_run_watcher(self, desk_for):
+        mock_client = MagicMock()
+        mock_client.get_option_market.side_effect = [
+            OptionQuote(mark=Decimal("1.00")),
+            OptionQuote(mark=Decimal("0.40")),
+        ]
+        mock_client.buy_to_open.return_value = OrderFill("b1", "filled", 1, Decimal("1.00"))
+        mock_client.sell_to_close.return_value = OrderFill("s1", "filled", 1, Decimal("2.00"))
+        desk_for.return_value = MagicMock(client=lambda: mock_client)
+
+        client = Client()
+        ingest_payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "ingest_signal",
+                "arguments": {
+                    "ref_id": "e2e-1",
+                    "account_slug": "prop-desk",
+                    "symbol": "AAPL",
+                    "option_type": "call",
+                    "strike": "200",
+                    "expiration": (date.today() + timedelta(days=30)).isoformat(),
+                    "entry_rule": {"type": "limit", "price": "1.25"},
+                    "stop": "0.50",
+                    "size": 1,
+                },
+            },
+        }
+        client.post(
+            "/api/mcp/execution/",
+            data=ingest_payload,
+            content_type="application/json",
+            HTTP_AUTHORIZATION="Bearer test-token",
+        )
+        self.assertEqual(evaluate_all_signals(), 1)
+        signal = HarnessSignal.objects.get(ref_id="e2e-1")
+        self.assertEqual(signal.status, SIGNAL_OPEN)
+        self.assertEqual(evaluate_all_signals(), 1)
+        signal.refresh_from_db()
+        self.assertEqual(signal.status, "closed")
 
 
 class ExecutionDryRunEnforcedTests(TestCase):
