@@ -201,7 +201,13 @@ def _reconcile_working_entry(signal: HarnessSignal, order: HarnessOrder) -> None
         journal("entry_unfilled", execution_account=account, signal=signal, detail={"status": fill.status})
 
 
+def _has_working_exit(signal: HarnessSignal) -> bool:
+    return signal.orders.filter(purpose=ORDER_EXIT, status=ORDER_WORKING).exists()
+
+
 def _exit_position(signal: HarnessSignal, position: HarnessPosition, quantity: int, limit_price: Decimal, reason: str):
+    if _has_working_exit(signal):
+        return
     account = signal.execution_account
     dry_run = _effective_dry_run(account)
     order = HarnessOrder.objects.create(
