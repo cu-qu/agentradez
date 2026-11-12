@@ -219,6 +219,7 @@ class ExecutionHarnessTests(TestCase):
             time_exit_at=past,
         )
         HarnessPosition.objects.create(
+            user=self.user,
             signal=signal,
             execution_account=self.account,
             quantity=1,
@@ -250,6 +251,7 @@ class ExecutionHarnessTests(TestCase):
             status=SIGNAL_OPEN,
         )
         HarnessPosition.objects.create(
+            user=self.user,
             signal=signal,
             execution_account=self.account,
             quantity=2,
@@ -288,6 +290,7 @@ class ExecutionHarnessTests(TestCase):
             status=SIGNAL_OPEN,
         )
         HarnessPosition.objects.create(
+            user=self.user,
             signal=signal,
             execution_account=self.account,
             quantity=1,
