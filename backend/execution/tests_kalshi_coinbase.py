@@ -34,6 +34,17 @@ class KalshiApiTests(SimpleTestCase):
         self.assertTrue(len(sig) > 20)
 
     @patch("execution.services.kalshi_api.requests.request")
+    def test_http_error_raises(self, req):
+        req.return_value = MagicMock(status_code=403, text='{"error":"forbidden"}')
+        client = KalshiRestClient(
+            KalshiConfig(api_key_id="key-id", private_key_pem=_rsa_pem(), base_url="https://demo-api.kalshi.co/trade-api/v2")
+        )
+        from execution.services.kalshi_api import KalshiApiError
+
+        with self.assertRaises(KalshiApiError):
+            client.balance()
+
+    @patch("execution.services.kalshi_api.requests.request")
     def test_balance_request_headers(self, req):
         req.return_value = MagicMock(status_code=200, text='{"balance":{"balance":5000}}')
         client = KalshiRestClient(
@@ -100,6 +111,30 @@ class CoinbaseConfigTests(SimpleTestCase):
         with override_settings(COINBASE_ADVANCED_API_KEY_NAME="", COINBASE_ADVANCED_API_PRIVATE_KEY_PEM=""):
             with self.assertRaises(CoinbaseApiError):
                 load_coinbase_config()
+
+
+@override_settings(
+    COINBASE_ADVANCED_API_KEY_NAME="organizations/x/apiKeys/y",
+    COINBASE_ADVANCED_API_PRIVATE_KEY_PEM=_rsa_pem(),
+)
+class CoinbaseApiHttpTests(SimpleTestCase):
+    @patch("execution.services.coinbase_api.requests.request")
+    def test_http_error_raises(self, req):
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+
+        key = ec.generate_private_key(ec.SECP256R1())
+        pem = key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption(),
+        ).decode("utf-8")
+        with override_settings(COINBASE_ADVANCED_API_PRIVATE_KEY_PEM=pem):
+            req.return_value = MagicMock(status_code=401, text="unauthorized")
+            from execution.services.coinbase_api import CoinbaseAdvancedClient, CoinbaseApiError
+
+            with self.assertRaises(CoinbaseApiError):
+                CoinbaseAdvancedClient().request("GET", "/api/v3/brokerage/accounts")
 
 
 class CoinbaseHarnessMockTests(SimpleTestCase):
