@@ -46,6 +46,23 @@ Update or cancel **your** instructions; read **your** positions and journal.
 4. **Create MCP token** — Settings → “AI agent (MCP) access” or `POST /api/execution/agent-tokens/` (scopes: `execution:read`, `execution:trade`).
 5. Point your MCP client at `POST {API}/api/mcp/execution/` with `Authorization: Bearer agz_pat_...`.
 
+### Grok Bot (remote MCP over HTTPS)
+
+| Field | Value |
+|---|---|
+| Server URL | `https://api.agentradez.com/api/mcp/execution/` (or `{PUBLIC_API_URL}/api/mcp/execution/`) |
+| Transport | Streamable HTTP — `POST` JSON-RPC 2.0 (`initialize`, `tools/list`, `tools/call`) |
+| Auth | **Bearer token** — personal access token `agz_pat_...` (not the legacy shared `EXECUTION_MCP_BEARER_TOKEN`) |
+| OAuth (optional) | Metadata at `GET /api/mcp/execution/.well-known/oauth-authorization-server` |
+
+**Mint a token on the server (ops / Cuyler):**
+
+```bash
+python manage.py mint_execution_pat --email you@example.com --label grok-bot
+```
+
+The command prints the token once. Revoke from Settings → AI agent (MCP) access or `POST .../agent-tokens/<id>/revoke/`.
+
 **OAuth (third-party agents):** register client `POST /api/execution/oauth/clients/`, user approves via `GET/POST /api/execution/oauth/authorize/` + `approve/`, exchange code at `POST /api/execution/oauth/token/` (PKCE).
 
 ## Sample instruction payload (from your agent)

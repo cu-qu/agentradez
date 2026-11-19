@@ -183,6 +183,35 @@ class ExecutionHarnessTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(HarnessSignal.objects.filter(user=self.user, ref_id="mcp-1").exists())
 
+    @override_settings(EXECUTION_MCP_ADMIN_BEARER="")
+    def test_mcp_initialize_and_tools_list(self):
+        raw, _ = generate_pat(self.user, "handshake")
+        client = Client()
+        headers = {"HTTP_AUTHORIZATION": f"Bearer {raw}"}
+
+        init = client.post(
+            "/api/mcp/execution/",
+            data={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            content_type="application/json",
+            **headers,
+        )
+        self.assertEqual(init.status_code, 200)
+        init_body = init.json()
+        self.assertEqual(init_body["result"]["serverInfo"]["name"], "agentradez-execution")
+
+        tools = client.post(
+            "/api/mcp/execution/",
+            data={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+            content_type="application/json",
+            **headers,
+        )
+        self.assertEqual(tools.status_code, 200)
+        names = [t["name"] for t in tools.json()["result"]["tools"]]
+        self.assertEqual(
+            names,
+            ["list_accounts", "ingest_signal", "set_levels", "cancel_signal", "status"],
+        )
+
     @patch("execution.services.adapters.list_accounts_for")
     def test_robinhood_adapter_mocked(self, list_accounts):
         from execution.services.adapters import RobinhoodDeskAdapter
@@ -288,6 +317,7 @@ class ExecutionHarnessTests(TestCase):
         desk_for.return_value = MagicMock(harness_client=lambda: mock_harness)
 
         signal = HarnessSignal.objects.create(
+            user=self.user,
             ref_id="dup-entry-1",
             execution_account=self.account,
             symbol="AAPL",
