@@ -88,7 +88,13 @@ def _resolve_stop(signal: HarnessSignal, entry: Decimal, mark: Decimal) -> Decim
     return None
 
 
+def _has_working_entry(signal: HarnessSignal) -> bool:
+    return signal.orders.filter(purpose=ORDER_ENTRY, status=ORDER_WORKING).exists()
+
+
 def _place_entry(signal: HarnessSignal, limit_price: Decimal) -> HarnessOrder | None:
+    if signal.status == SIGNAL_WORKING_ENTRY or _has_working_entry(signal):
+        return None
     account = signal.execution_account
     dry_run = _effective_dry_run(account)
     try:
@@ -354,6 +360,10 @@ def evaluate_signal(signal: HarnessSignal) -> None:
     signal.save(update_fields=["last_mark_price", "last_tick_at", "updated_at"])
 
     if signal.status == SIGNAL_PENDING:
+        if _has_working_entry(signal):
+            signal.status = SIGNAL_WORKING_ENTRY
+            signal.save(update_fields=["status", "updated_at"])
+            return
         limit = _entry_limit_price(signal) or mark
         if _should_submit_entry(signal, mark):
             _place_entry(signal, limit)

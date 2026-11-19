@@ -6,7 +6,15 @@ from django.test import Client, TestCase, override_settings
 from django.utils import timezone
 
 from accounts.models import User
-from execution.constants import ORDER_EXIT, ORDER_WORKING, POSITION_OPEN, SIGNAL_OPEN, SIGNAL_PENDING
+from execution.constants import (
+    ORDER_ENTRY,
+    ORDER_EXIT,
+    ORDER_WORKING,
+    POSITION_OPEN,
+    SIGNAL_OPEN,
+    SIGNAL_PENDING,
+    SIGNAL_WORKING_ENTRY,
+)
 from execution.models import ExecutionAccount, HarnessJournal, HarnessOrder, HarnessPosition, HarnessSignal
 from execution.services.ingest import cancel_signal
 from execution.services.rules_engine import evaluate_all_signals
@@ -254,6 +262,37 @@ class ExecutionHarnessTests(TestCase):
         self.assertEqual(signal.status, SIGNAL_OPEN)
         signal.position.refresh_from_db()
         self.assertEqual(signal.position.remaining_quantity, 1)
+
+    @override_settings(EXECUTION_DRY_RUN_DEFAULT=False)
+    @patch("execution.services.rules_engine.desk_adapter_for")
+    def test_no_duplicate_working_entry_orders(self, desk_for):
+        self.account.dry_run = False
+        self.account.save(update_fields=["dry_run"])
+        mock_harness = MagicMock()
+        mock_harness.get_quote.return_value = MarketQuote(mark=Decimal("1.00"))
+        working = OrderFill("live-entry", "open", 0, Decimal("1.00"))
+        mock_harness.place_limit_entry.return_value = working
+        mock_harness.fetch_order.return_value = working
+        desk_for.return_value = MagicMock(harness_client=lambda: mock_harness)
+
+        signal = HarnessSignal.objects.create(
+            ref_id="dup-entry-1",
+            execution_account=self.account,
+            symbol="AAPL",
+            option_type="call",
+            strike=Decimal("200"),
+            expiration=date.today() + timedelta(days=30),
+            quantity=1,
+            entry_rule={"type": "limit", "price": "1.25"},
+            stop_price=Decimal("0.50"),
+            status=SIGNAL_PENDING,
+        )
+        evaluate_signal(signal)
+        evaluate_signal(signal)
+        entry_orders = HarnessOrder.objects.filter(signal=signal, purpose=ORDER_ENTRY, status=ORDER_WORKING)
+        self.assertEqual(entry_orders.count(), 1)
+        signal.refresh_from_db()
+        self.assertEqual(signal.status, SIGNAL_WORKING_ENTRY)
 
     @override_settings(EXECUTION_DRY_RUN_DEFAULT=False)
     @patch("execution.services.rules_engine.desk_adapter_for")
