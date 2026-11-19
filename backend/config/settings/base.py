@@ -126,6 +126,7 @@ INSTALLED_APPS = [
     "accounts",
     "billing",
     "trading",
+    "execution",
 ]
 
 MIDDLEWARE = [
@@ -317,6 +318,16 @@ ROBINHOOD_MCP_URL = os.environ.get(
 ).strip()
 ROBINHOOD_CLIENT_ID = os.environ.get("ROBINHOOD_CLIENT_ID", "").strip()
 ROBINHOOD_OAUTH_REDIRECT_URI = os.environ.get("ROBINHOOD_OAUTH_REDIRECT_URI", "").strip()
+
+# Execution harness (Prop Desk MCP watcher — no LLM in the rule loop)
+EXECUTION_MCP_BEARER_TOKEN = os.environ.get("EXECUTION_MCP_BEARER_TOKEN", "").strip()
+EXECUTION_DRY_RUN_DEFAULT = os.environ.get("EXECUTION_DRY_RUN_DEFAULT", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+EXECUTION_RULES_INTERVAL_SECONDS = float(os.environ.get("EXECUTION_RULES_INTERVAL_SECONDS", "60"))
 
 _resend_key = os.environ.get("RESEND_API_KEY", "").strip()
 if os.environ.get("EMAIL_BACKEND", "").strip():

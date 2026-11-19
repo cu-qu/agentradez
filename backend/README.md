@@ -46,7 +46,11 @@ When the container is ready, **Run and Debug** → **Agentradez: API + Celery**.
 - Split settings: `local` / `stage` / `production` / `test`
 - WhiteNoise static files (production starts **without** object storage; gunicorn serves Django admin CSS from `STATIC_ROOT`)
 
-Apps: `config`, `core`, `accounts`, `billing`, `trading`.
+Apps: `config`, `core`, `accounts`, `billing`, `trading`, `execution`.
+
+### Execution harness MCP (Prop Desk)
+
+See [execution/README.md](execution/README.md) for MCP tool schemas, env vars, and a sample `ingest_signal` payload. The minute rule loop runs in Celery beat (`execution.evaluate_harness_rules`) and does not call an LLM.
 
 Seed data (`setup_base_data` / `seed_trading`) creates Conservative / Balanced / Aggressive tiers, the Copy Trade strategy, and a generic Research / Breakthrough strategy (no default sector or company universe). Copy Trade pulls signals from a configured source — X today, with chat groups planned later. The X source watches a configured account (`X_COPY_TRADE_HANDLE`) and turns option tweets into signals. Research / Breakthrough is configured per instance: sectors, news keywords, catalyst types, and watched companies. It scores confirmed catalysts and selects an options contract itself. Tier rules are stored as rows and can be edited by admins.
 
