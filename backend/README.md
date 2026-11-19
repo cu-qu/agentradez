@@ -48,9 +48,9 @@ When the container is ready, **Run and Debug** → **Agentradez: API + Celery**.
 
 Apps: `config`, `core`, `accounts`, `billing`, `trading`, `execution`.
 
-### Execution harness MCP (Prop Desk)
+### Execution harness MCP (user agents)
 
-See [execution/README.md](execution/README.md) for MCP tool schemas, env vars, and a sample `ingest_signal` payload. The minute rule loop runs in Celery beat (`execution.evaluate_harness_rules`) and does not call an LLM.
+See [execution/README.md](execution/README.md). End users connect **their own** AI agents via per-user MCP tokens; Agentradez **executes only** the instructions the user’s agent submits (limit orders, rule-based exits) on **their** brokerage — no trade picks, sizing, or advice. Separate from copy-trade/research strategies. Celery beat: `execution.evaluate_harness_rules` (no LLM).
 
 Seed data (`setup_base_data` / `seed_trading`) creates Conservative / Balanced / Aggressive tiers, the Copy Trade strategy, and a generic Research / Breakthrough strategy (no default sector or company universe). Copy Trade pulls signals from a configured source — X today, with chat groups planned later. The X source watches a configured account (`X_COPY_TRADE_HANDLE`) and turns option tweets into signals. Research / Breakthrough is configured per instance: sectors, news keywords, catalyst types, and watched companies. It scores confirmed catalysts and selects an options contract itself. Tier rules are stored as rows and can be edited by admins.
 

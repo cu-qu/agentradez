@@ -41,10 +41,11 @@ def _pem_from_env() -> str:
 
 
 def load_kalshi_config() -> KalshiConfig:
+    """Dev/ops fallback when broker connection has no stored credentials."""
     key_id = (getattr(settings, "KALSHI_API_KEY_ID", None) or "").strip()
     pem = _pem_from_env()
     if not key_id or not pem:
-        raise KalshiApiError("Kalshi credentials not configured in environment.")
+        raise KalshiApiError("Kalshi credentials not configured (connect broker or set env).")
     base = (getattr(settings, "KALSHI_API_BASE_URL", None) or "").strip().rstrip("/")
     if not base:
         demo = getattr(settings, "KALSHI_USE_DEMO", True)

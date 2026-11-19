@@ -204,7 +204,7 @@ def _finish_robinhood_oauth(code: str, state: str, expected_user=None):
     user = expected_user or User.objects.filter(pk=pending["user_id"]).first()
     if user is None:
         raise RobinhoodError("User no longer exists.")
-    disconnect_user_brokers(user)
+    disconnect_user_brokers(user, "robinhood")
     connection = BrokerConnection.objects.create(
         user=user,
         broker="robinhood",
